@@ -55,3 +55,6 @@ Technical Details
 
     Deployment: Easily bundled into a standalone Windows executable using PyInstaller.  The 
 	releases section contains an archive with a prebuilt .exe and the necessary files for running it.
+
+
+*the energy veil in the repository version of this is lower quality because github doesn't allow files larger than 25mb.
