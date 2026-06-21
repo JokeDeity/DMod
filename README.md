@@ -13,7 +13,8 @@ Core Features
 
         GIFs:  Some fun and some ambient.
 
-        Custom: Support for your own animated GIFs or veils presuming you can do some light coding to edit the python script.
+        Custom: Support for your own animated GIFs or veils presuming you can do some light coding to
+		edit the python script.
 
     Audio Cues: Sound effects for activation, pausing, and clearing.
 
@@ -21,15 +22,22 @@ Core Features
 
 How to Use
 
-    Version: If you download the files from the repository you will have to run the python script (dmod.py) from either CMD Prompt or Powershell:
-        CD into the folder
-        "python dmod.py"
+    Version: 
+          If You are using the .exe from the archive in the releases section you just need to extract 
+		  everything to one location and then launch the .exe.
+    
+          If you download the files from the repository you will have to run the python script 
+		  (dmod.py) from either CMD Prompt or Powershell:
+				CD into the folder
+				"python dmod.py"
 
-      If You are using the .exe from the archive in the releases section you just need to extract everything to one location and then launch the .exe.
 
-    Hotkeys: Set them as you would like, right now you'll have to enter them manually, but the plan in next version is to just press the key you want.
 
-    Activate: Hold your activate hotkey to start selecting areas, or press it once to cover the entire screen(s).
+    Hotkeys: Set them as you would like, right now you'll have to enter them manually, but the plan 
+	in next version is to just press the key you want.
+
+    Activate: Hold your activate hotkey to start selecting areas, or press it once to cover the 
+	entire screen(s).
 
     Select: Click and drag to create one or more transparent focus rectangles.
 
@@ -45,4 +53,5 @@ Technical Details
 
     Configuration: Saves all preferences (opacity, colors, delays) automatically via QSettings.
 
-    Deployment: Easily bundled into a standalone Windows executable using PyInstaller.  The releases section contains an archive with a prebuilt .exe and the necessary files for running it.
+    Deployment: Easily bundled into a standalone Windows executable using PyInstaller.  The 
+	releases section contains an archive with a prebuilt .exe and the necessary files for running it.
