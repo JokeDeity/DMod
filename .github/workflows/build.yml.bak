@@ -30,12 +30,12 @@ jobs:
     - name: Compile with PyInstaller
       run: |
         # Added "--add-data "veil.py;."" to ensure the logic is included in the bundle
-        pyinstaller --noconsole --onefile --icon=icon.ico ^
-        --add-data "icon.ico;." ^
-        --add-data "veil.py;." ^
-        --add-data "*.mp3;." ^
-        --add-data "*.wav;." ^
-        --add-data "*.gif;." ^
+        pyinstaller --noconsole --onefile --icon=icon.ico `
+        --add-data "icon.ico;." `
+        --add-data "veil.py;." `
+        --add-data "*.mp3;." `
+        --add-data "*.wav;." `
+        --add-data "*.gif;." `
         dmod.py
 
     - name: Create GitHub Release
