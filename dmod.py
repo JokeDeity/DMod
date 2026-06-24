@@ -13,7 +13,7 @@ from shapes import clear_selection_holes, draw_selection_outlines
 import winutils
 import mus
 
-# ── Sound setup ──────────────────────────────────────────────────────────────
+# ── Sound setup ────────────────────────────────────────────────────────────
 pygame.mixer.init()
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -26,7 +26,8 @@ def play_sound(filename):
     except Exception:
         pass
 
-# ─────────────────────────────────────────────────────────────────────────────
+
+# ────────────────────────────────────────────────────────────────────────────
 
 class HotkeyManager(QObject):
     primary_pressed = pyqtSignal()
@@ -468,11 +469,6 @@ class AppController(QObject):
         self.settings_window.show()
         self.settings_window.raise_()
         self.settings_window.activateWindow()
-
-    def setup_tray(self):
-        self.tray_icon = QSystemTrayIcon()
-        self.tray_icon.setIcon(QIcon(os.path.join(SCRIPT_DIR, "icon.ico")))
-        self.tray_icon.setToolTip("DMod")
 
     def setup_tray(self):
         self.tray_icon = QSystemTrayIcon()
