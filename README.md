@@ -1,7 +1,7 @@
 
 <center>DMod
 <img width="1240" height="407" alt="Untitled" src="https://github.com/user-attachments/assets/3a7195c5-5b30-487a-bf3a-369bd8220f42" /></center>
-NEW FEATURE:  Double-click Hide Desktop Icons:  Double-click on your desktop to hide all the icons.
+NEW FEATURE:  Double-click Hide Desktop Icons:  Double-click on your desktop to hide all the icons.  
   
 NEW FEATURE:  Unsnag:  Unsnag your cursor from the corners on multiple monitor setups.
 
