@@ -1,4 +1,11 @@
-DMod
+
+<center>DMod
+<img width="1240" height="407" alt="Untitled" src="https://github.com/user-attachments/assets/3a7195c5-5b30-487a-bf3a-369bd8220f42" /></center>
+NEW FEATURE:  Double-click Hide Desktop Icons:  Double-click on your desktop to hide all the icons.
+
+NEW FEATURE:  Unsnag:  Unsnag your cursor from the corners on multiple monitor setups.
+
+NEW FEATURE:  Monitor Wrap:  Your cursor goes off the edge of one side and enters the other, again helpful for mulitple monitor setups.
 
 NEW FEATURE:  Cursorlock:  Lock your cursor to the active window with a hotkey.  
 
