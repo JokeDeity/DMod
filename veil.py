@@ -525,19 +525,24 @@ class MatrixRainVeil(VeilBase):
     def __init__(self):
         super().__init__()
         self._timer = QTimer()
-        self._timer.setInterval(60)  # Increased from 45 for better perf
+        self._timer.setInterval(60)
         self._timer.timeout.connect(self._tick)
         self._streams = []
         self._chars = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ$@#%&:<>*+=-"
         self._font = QFont("Courier New", 14)
         self._font.setBold(True)
+        
+        # Optimization caches
+        self._pen_cache = {}
+        self._last_color = None
+        self._last_opacity = -1
 
     def _tick(self):
         if not self._streams and self._parent:
-            cols = max(12, self._parent.width() // 30)  # Reduced column count
+            cols = max(12, self._parent.width() // 30)
             self._streams = [
                 {"x": i * 30, "y": random.randint(-500, 0), "speed": random.randint(6, 14), 
-                 "len": random.randint(8, 20)}  # Reduced max length
+                 "len": random.randint(8, 20)}
                 for i in range(cols)
             ]
 
@@ -562,17 +567,26 @@ class MatrixRainVeil(VeilBase):
         painter.save()
         painter.setFont(self._font)
 
-        m_color = QColor(color) if color != "#000000" else QColor(30, 255, 40)
+        if color != self._last_color or opacity != self._last_opacity:
+            self._pen_cache.clear()
+            self._last_color = color
+            self._last_opacity = opacity
+            self._m_color = QColor(color) if color != "#000000" else QColor(30, 255, 40)
 
         for s in self._streams:
-            for k in range(s["len"]):
+            slen = s["len"]
+            for k in range(slen):
                 char_y = int(s["y"] - (k * 18))
                 if 0 <= char_y <= full_rect.height() + 20:
-                    alpha = int((1.0 - (k / s["len"])) * opacity * 255)
-                    c = QColor(m_color if k > 0 else QColor(220, 255, 220))
-                    c.setAlpha(alpha)
-                    painter.setPen(c)
+                    cache_key = (slen, k)
                     
+                    if cache_key not in self._pen_cache:
+                        alpha = int((1.0 - (k / slen)) * opacity * 255)
+                        c = QColor(self._m_color if k > 0 else QColor(220, 255, 220))
+                        c.setAlpha(alpha)
+                        self._pen_cache[cache_key] = c
+                        
+                    painter.setPen(self._pen_cache[cache_key])
                     char_seed = int(char_y // 18 + k)
                     char_char = self._chars[char_seed % len(self._chars)]
                     painter.drawText(s["x"], char_y, char_char)
