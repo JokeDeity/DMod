@@ -1,7 +1,8 @@
 
 
 <center>DMod
-<img width="1280" height="447" alt="Untitled" src="https://github.com/user-attachments/assets/f008f2d8-d0f5-429e-9498-12268c946fe5" /></center>
+<img width="1280" height="447" alt="Untitled" src="https://github.com/user-attachments/assets/4d8a5ff2-c15f-4573-b248-5d2b01490c17" />
+</center>
 
 NEW FEATURE:  Double-click Hide Desktop Icons:  Double-click on your desktop to hide all the icons.
 
