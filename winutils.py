@@ -6,6 +6,8 @@ dependencies required.
 
 import ctypes
 import sys
+import winreg
+import os
 from ctypes import wintypes
 
 user32 = ctypes.windll.user32
@@ -71,10 +73,12 @@ def toggle_always_on_top(hwnd=None):
 
 def toggle_desktop_icons():
     """
-    Toggles desktop icon visibility by showing/hiding the SysListView32
-    owned by SHELLDLL_DefView under the desktop WorkerW.
+    Toggles desktop icon visibility by searching both Progman and WorkerW
+    branches for the SysListView32 component.
     """
-    user32.FindWindowExW.argtypes = [wintypes.HWND, wintypes.HWND, wintypes.LPCWSTR, wintypes.LPCWSTR]
+    # Required Windows API definitions for this specific function
+    # Using c_wchar_p (pointer to wide-character string) for string arguments
+    user32.FindWindowExW.argtypes = [wintypes.HWND, wintypes.HWND, ctypes.c_wchar_p, ctypes.c_wchar_p]
     user32.FindWindowExW.restype  = wintypes.HWND
     user32.GetWindow.argtypes     = [wintypes.HWND, ctypes.c_uint]
     user32.GetWindow.restype      = wintypes.HWND
@@ -82,9 +86,9 @@ def toggle_desktop_icons():
     user32.IsWindowVisible.restype  = wintypes.BOOL
     user32.ShowWindow.argtypes    = [wintypes.HWND, ctypes.c_int]
     user32.ShowWindow.restype     = wintypes.BOOL
-    user32.GetClassNameW.argtypes = [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int]
+    user32.GetClassNameW.argtypes = [wintypes.HWND, ctypes.c_wchar_p, ctypes.c_int]
     user32.GetClassNameW.restype  = ctypes.c_int
-    user32.GetWindowTextW.argtypes = [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int]
+    user32.GetWindowTextW.argtypes = [wintypes.HWND, ctypes.c_wchar_p, ctypes.c_int]
     user32.GetWindowTextW.restype  = ctypes.c_int
 
     GW_CHILD = 5
@@ -101,22 +105,71 @@ def toggle_desktop_icons():
         user32.GetWindowTextW(hwnd, b, 256)
         return b.value
 
-    hwnd = 0
-    while True:
-        hwnd = user32.FindWindowExW(0, hwnd, "WorkerW", None)
-        if not hwnd:
-            break
-        h_def = user32.GetWindow(hwnd, GW_CHILD)
-        if not h_def or _get_class(h_def) != "SHELLDLL_DefView":
-            continue
-        h_lv = user32.GetWindow(h_def, GW_CHILD)
-        if not h_lv or _get_class(h_lv) != "SysListView32" or _get_title(h_lv) != "FolderView":
-            continue
-        if user32.IsWindowVisible(h_lv):
-            user32.ShowWindow(h_lv, SW_HIDE)
+    # Check both potential parent shell windows
+    parent_classes = ["WorkerW", "Progman"]
+    
+    for parent_class in parent_classes:
+        hwnd = 0
+        while True:
+            hwnd = user32.FindWindowExW(0, hwnd, parent_class, None)
+            if not hwnd:
+                break
+                
+            h_def = user32.GetWindow(hwnd, GW_CHILD)
+            if not h_def:
+                continue
+            
+            # Look for the SHELLDLL_DefView container
+            if _get_class(h_def) != "SHELLDLL_DefView":
+                continue
+                
+            # Look for the actual icon list
+            h_lv = user32.GetWindow(h_def, GW_CHILD)
+            if h_lv and _get_class(h_lv) == "SysListView32" and _get_title(h_lv) == "FolderView":
+                if user32.IsWindowVisible(h_lv):
+                    user32.ShowWindow(h_lv, SW_HIDE)
+                else:
+                    user32.ShowWindow(h_lv, SW_SHOW)
+                return
+                
+                
+def set_autostart(enable=True):
+    """Adds or removes the application from the Windows Startup registry key."""
+    key_path = r"Software\Microsoft\Windows\CurrentVersion\Run"
+    app_name = "DMod"
+    exe_path = sys.executable
+    
+    # Handle both PyInstaller executable and raw script execution
+    if getattr(sys, 'frozen', False):
+        target = f'"{exe_path}"'
+    else:
+        target = f'"{exe_path}" "{os.path.abspath(sys.argv[0])}"'
+        
+    try:
+        key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_ALL_ACCESS)
+        if enable:
+            winreg.SetValueEx(key, app_name, 0, winreg.REG_SZ, target)
         else:
-            user32.ShowWindow(h_lv, SW_SHOW)
-        return
+            try:
+                winreg.DeleteValue(key, app_name)
+            except FileNotFoundError:
+                pass
+        winreg.CloseKey(key)
+        return True
+    except Exception:
+        return False
+        
+def is_autostart_enabled():
+    """Checks if the app is currently in the Windows Startup registry."""
+    key_path = r"Software\Microsoft\Windows\CurrentVersion\Run"
+    app_name = "DMod"
+    try:
+        key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_READ)
+        winreg.QueryValueEx(key, app_name)
+        winreg.CloseKey(key)
+        return True
+    except FileNotFoundError:
+        return False
 
 
 def is_admin():

@@ -894,9 +894,124 @@ class CellsVeil(VeilBase):
             
         painter.restore()
         _clear_holes(painter, selection_rects, selection_shape)
+        
+# ── 16. Liquid Color ────────────────────────────────────────────
+        
+class Particle:
+    def __init__(self, x, y, color, burst_type="default"):
+        self.x = x
+        self.y = y
+        self.life = 1.0 
+        self.color = color
+        self.burst_type = burst_type
+        
+        # Physics base defaults
+        self.size = random.uniform(0.5, 2.0)
+        self.decay_rate = random.uniform(0.003, 0.01)
+        self.gravity = random.uniform(0.01, 0.03)
+        self.vx = random.uniform(-1.5, 1.5)
+        self.vy = random.uniform(-1.5, 1.5)
 
+        # Apply Burst Styles
+        if burst_type == "willow": # Slow fall, long life
+            self.vy = random.uniform(-0.5, 0.5)
+            self.gravity = 0.02
+            self.decay_rate = 0.003
+        elif burst_type == "palm": # Fast expansion, high gravity
+            self.vx *= 2.0
+            self.vy *= 2.0
+            self.gravity = 0.05
+        elif burst_type == "bees": # Erratic movement
+            self.vx *= 2.5
+            self.vy *= 2.5
+            self.decay_rate = 0.02
 
-# ── 16 / 20. GIF-backed veils ────────────────────────────────────────────
+    def update(self):
+        # Bees get an extra "wobble"
+        if self.burst_type == "bees":
+            self.vx += random.uniform(-0.2, 0.2)
+            self.vy += random.uniform(-0.2, 0.2)
+            
+        self.x += self.vx
+        self.y += self.vy
+        self.vy += self.gravity
+        self.life -= self.decay_rate
+
+class FireworkVeil(VeilBase):
+    def __init__(self):
+        super().__init__()
+        self.particles = []
+        self.timer = QTimer()
+        self.timer.timeout.connect(self._tick)
+
+    def _tick(self):
+        # Random roll for bursts: 3% default, lower for special types
+        roll = random.random()
+        if roll < 0.03:
+            # Determine type
+            type_roll = random.random()
+            if type_roll < 0.1: b_type = "willow"
+            elif type_roll < 0.2: b_type = "palm"
+            elif type_roll < 0.25: b_type = "bees"
+            else: b_type = "default"
+            
+            self._launch_firework(b_type)
+        
+        for p in self.particles[:]:
+            p.update()
+            if p.life <= 0:
+                self.particles.remove(p)
+        
+        if self._parent:
+            self._parent.update()
+
+    def _launch_firework(self, b_type):
+        if not self._parent: return
+        rect = self._parent.rect()
+        x = random.randint(0, rect.width())
+        y = random.randint(0, rect.height())
+        
+        c1 = QColor(random.randint(100, 255), random.randint(100, 255), random.randint(100, 255))
+        c2 = QColor(random.randint(100, 255), random.randint(100, 255), random.randint(100, 255))
+        
+        for _ in range(30):
+            self.particles.append(Particle(x, y, c1, b_type))
+            self.particles.append(Particle(x, y, c2, b_type))
+
+    def on_show(self):
+        self.timer.start(30)
+
+    def on_hide(self):
+        self.timer.stop()
+        self.particles.clear()
+
+    def paint(self, painter, full_rect, selection_rects, opacity, color_hex, selection_shape="rectangle"):
+        painter.setRenderHint(QPainter.Antialiasing)
+        
+        # Fade the background with the veil opacity
+        bg_color = QColor(0, 0, 0, int(opacity * 255))
+        painter.fillRect(full_rect, bg_color)
+        
+        # Draw particles
+        for p in self.particles:
+            alpha = int(p.life * 255 * opacity)
+            
+            # Glow
+            glow_color = QColor(p.color)
+            glow_color.setAlpha(int(alpha * 0.2))
+            painter.setBrush(glow_color)
+            painter.setPen(Qt.NoPen)
+            painter.drawEllipse(int(p.x - p.size), int(p.y - p.size), int(p.size * 3), int(p.size * 3))
+            
+            # Core
+            solid_color = QColor(p.color)
+            solid_color.setAlpha(alpha)
+            painter.setBrush(solid_color)
+            painter.drawEllipse(int(p.x), int(p.y), int(p.size), int(p.size))
+            
+        _clear_holes(painter, selection_rects, selection_shape)
+
+# ── 17 & 18. GIF-backed veils ────────────────────────────────────────────
 
 class GifVeil(VeilBase):
     _LARGE_PX = 257
@@ -990,6 +1105,7 @@ VEIL_LABELS = [
     ("radar", "Radar Sweep"),
     ("godrays", "God Rays"),
     ("flock", "Cells"),
+    ("fireworks", "Fireworks"),
     ("jellyfish", "Jellyfish"),
     ("chicks", "Chicks"),
 ]
@@ -1011,6 +1127,7 @@ _REGISTRY = {
     "radar": lambda: RadarVeil(),
     "godrays": lambda: GodRaysVeil(),
     "flock": lambda: CellsVeil(),
+    "fireworks": lambda: FireworkVeil(),
     "jellyfish": lambda: GifVeil("jellyfish.gif"),
     "chicks": lambda: GifVeil("chicks.gif"),
 }

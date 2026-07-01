@@ -3,6 +3,7 @@ import os
 import ctypes
 import threading
 import pygame
+import traceback
 from PyQt5.QtWidgets import QApplication, QWidget, QSystemTrayIcon, QMenu, QOpenGLWidget
 from PyQt5.QtCore import Qt, QRect, QPropertyAnimation, pyqtProperty, pyqtSignal, QObject, QSettings, QEasingCurve
 from PyQt5.QtGui import QPainter, QColor, QPen, QIcon, QPixmap, QSurfaceFormat
@@ -14,11 +15,22 @@ from shapes import clear_selection_holes, draw_selection_outlines
 import winutils
 import mus
 
+def log_error(exc_type, exc_value, exc_traceback):
+    with open("crash_log.txt", "w") as f:
+        traceback.print_exception(exc_type, exc_value, exc_traceback, file=f)
+
+sys.excepthook = log_error
+
 # ── Sound setup ────────────────────────────────────────────────────────────
 pygame.mixer.init()
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 def play_sound(filename):
+    settings = QSettings("TheaterMode", "Settings")
+    # We store the mute state in a setting, e.g., "mute_Activate.mp3"
+    # If the user checks the box, we save True.
+    if settings.value(f"mute_{filename}", False, type=bool):
+        return
     """Play an MP3 from the script's directory, non-blocking. Silently no-ops if missing."""
     path = os.path.join(SCRIPT_DIR, filename)
     try:
