@@ -384,7 +384,7 @@ class SettingsWindow(QWidget):
         layout.addLayout(mode_row)
 
         mode_hint = QLabel(
-            "Auto-Dim dynamically covers everything except the active window."
+            "Auto-Dim dynamically covers everything except\nthe active window.\n"
             "Manual lets you draw custom selection areas."
         )
         mode_hint.setObjectName("mutedText")
