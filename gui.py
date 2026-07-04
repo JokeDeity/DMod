@@ -514,8 +514,14 @@ class SettingsWindow(QWidget):
         card = QFrame()
         card.setObjectName("card")
         layout = QVBoxLayout(card)
-        layout.setContentsMargins(10, 15, 10, 15)
+        layout.setContentsMargins(20, 20, 20, 20)
 
+        header = QLabel("Sound Effects")
+        header.setObjectName("header")
+        layout.addWidget(header)
+        layout.addStretch()
+        
+        
         sounds = [("Activate.mp3", "Activate"),  ("Fade.mp3", "Fade"),
                   ("Clear.mp3", "Clear"), ("Pause.mp3", "Pause"),
                   ("Unpause.mp3", "Unpause"), ("Cursorlock.wav", "Cursor Lock"),
@@ -535,7 +541,7 @@ class SettingsWindow(QWidget):
             
             # Apply 11px spacing after each checkbox except the last
             if i < len(sounds) - 1:
-                layout.addSpacing(8)
+                layout.addStretch()
             
         return card
 
@@ -601,7 +607,7 @@ class SettingsWindow(QWidget):
         ss_time_row = QHBoxLayout()
         ss_time_row.setSpacing(8)
         
-        lbl_activate = QLabel("Timeout (min):")
+        lbl_activate = QLabel("Idle time:")
         lbl_activate.setStyleSheet("background: transparent; border: none;")
         ss_time_row.addWidget(lbl_activate)
 
