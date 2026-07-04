@@ -1,6 +1,7 @@
 
 <center>DMod
-<img width="1280" height="527" alt="image" src="https://github.com/user-attachments/assets/fccdb0fe-3683-4233-87fa-8af3522631cd" /></center>
+<img width="1280" height="527" alt="image" src="https://github.com/user-attachments/assets/d8576758-b5ca-47ea-b968-0ba83a60a14c" />
+</center>
 
 NEW FEATURE:  Screensaver mode:  Now you can set a timer and after that much idle time it will automatically kick in a fullscreen veil, just need to move the mouse around or click to bring it back.
 
