@@ -1,16 +1,20 @@
 
 <center>DMod
-<img width="1240" height="407" alt="Untitled" src="https://github.com/user-attachments/assets/3a7195c5-5b30-487a-bf3a-369bd8220f42" /></center>
+<img width="1280" height="527" alt="image" src="https://github.com/user-attachments/assets/fccdb0fe-3683-4233-87fa-8af3522631cd" /></center>
 
-NEW FEATURE:  Double-click Hide Desktop Icons:  Double-click on your desktop to hide all the icons.
+NEW FEATURE:  Screensaver mode:  Now you can set a timer and after that much idle time it will automatically kick in a fullscreen veil, just need to move the mouse around or click to bring it back.
 
-NEW FEATURE:  Unsnag:  Unsnag your cursor from the corners on multiple monitor setups.
+NEW FEATURE:  Veil Mode Auto-Dim:  This mode will automatically make whatever window is active be visible while everything else (with some exceptions and kinks) should be covered by the veil.
 
-NEW FEATURE:  Monitor Wrap:  Your cursor goes off the edge of one side and enters the other, again helpful for mulitple monitor setups.
+New feature:  Double-click Hide Desktop Icons:  Double-click on your desktop to hide all the icons.
 
-New feature:  Cursorlock:  Lock your cursor to the active window with a hotkey.  
+New feature:  Unsnag:  Unsnag your cursor from the corners on multiple monitor setups.
 
-New feature:  Always on Top toggle:  Turn any active window into always on top (requires run as admin for elevated windows).
+*Monitor Wrap:  Your cursor goes off the edge of one side and enters the other, again helpful for mulitple monitor setups.
+
+*Cursorlock:  Lock your cursor to the active window with a hotkey.  
+
+*Always on Top toggle:  Turn any active window into always on top (requires run as admin for elevated windows).
 
 A lightweight desktop utility to dim distractions. It lets you draw one or more focus zones on your screen, dimming everything else with customizable "veil" effects.
 Core Features
