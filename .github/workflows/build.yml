@@ -24,8 +24,10 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        # Add --no-cache-dir to force a clean download
         pip install --no-cache-dir -r requirements.txt
+        pip install pyinstaller
+        # Verify it exists
+        python -m PyInstaller --version
 
     - name: Compile with PyInstaller
       run: |
