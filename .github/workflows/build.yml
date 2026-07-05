@@ -29,7 +29,7 @@ jobs:
 
     - name: Compile with PyInstaller
       run: |
-        pyinstaller --noconsole --clean DMod.spec
+        python -m PyInstaller --noconsole --clean DMod.spec
 
     - name: Create GitHub Release
       uses: softprops/action-gh-release@v2
