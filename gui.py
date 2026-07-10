@@ -522,11 +522,11 @@ class SettingsWindow(QWidget):
         layout.addStretch()
         
         
-        sounds = [("Activate.mp3", "Activate"),  ("Fade.mp3", "Fade"),
-                  ("Clear.mp3", "Clear"), ("Pause.mp3", "Pause"),
-                  ("Unpause.mp3", "Unpause"), ("Cursorlock.wav", "Cursor Lock"),
-                  ("AOT.wav", "Always on Top"), ("hide.mp3", "Icon Hider"),
-                  ("wrap.mp3", "Monitor Wrap")]
+        sounds = [("Activate.ogg", "Activate"),  ("Fade.ogg", "Fade"),
+                  ("Clear.ogg", "Clear"), ("Pause.ogg", "Pause"),
+                  ("Unpause.ogg", "Unpause"), ("Cursorlock.ogg", "Cursor Lock"),
+                  ("AOT.ogg", "Always on Top"), ("hide.ogg", "Icon Hider"),
+                  ("wrap.ogg", "Monitor Wrap")]
 
         for i, (filename, label_text) in enumerate(sounds):
             chk = QCheckBox(f"Play {label_text} Sound")

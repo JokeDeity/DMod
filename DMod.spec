@@ -5,7 +5,7 @@ a = Analysis(
     ['dmod.py'],
     pathex=[],
     binaries=[],
-    datas=[('icon.ico', '.'), ('*.wav', '.'), ('*.mp3', '.'), ('*.gif', '.')],
+    datas=[('icon.ico', '.'), ('*.ogg', '.'), ('*.gif', '.')],
     hiddenimports=['_cffi_backend'],
     hookspath=[],
     hooksconfig={},

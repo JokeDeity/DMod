@@ -1,14 +1,17 @@
 import sys
 import os
 import ctypes
-import miniaudio
 import threading
+import queue
 import traceback
 from PyQt5.QtWidgets import QApplication, QWidget, QSystemTrayIcon, QMenu, QOpenGLWidget
 from PyQt5.QtCore import Qt, QRect, QPropertyAnimation, pyqtProperty, pyqtSignal, QObject, QSettings, QEasingCurve, QTimer
 from PyQt5.QtGui import QPainter, QColor, QPen, QIcon, QPixmap, QSurfaceFormat
 from PyQt5.QtOpenGL import QGLFormat
 from pynput import keyboard, mouse as pynput_mouse
+from os import environ
+environ['PYGAME_HIDE_SUPPORT_PROMPT'] = '1'
+import pygame
 from veil import get_veil, VEIL_LABELS
 from gui import SettingsWindow
 from shapes import clear_selection_holes, draw_selection_outlines
@@ -19,33 +22,35 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 _cache = {}
 
 # ── Sound setup ────────────────────────────────────────────────────────────
-def play_sound(filename):
-    settings = QSettings("TheaterMode", "Settings")
-    if settings.value(f"mute_{filename}", False, type=bool):
-        return
-    
-    path = os.path.join(SCRIPT_DIR, filename)
-    if not os.path.exists(path):
-        return
+pygame.mixer.init()
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
-    # Use a persistent cache for the device and stream
-    # so they aren't garbage collected
+# Sound cache: load each file once as a Sound object.
+# pygame.mixer.music resets the audio stream on every load() call (it is
+# designed for background music), causing the audio device fragmentation,
+# popping, and latency reported over time.  mixer.Sound keeps the device
+# open, plays instantly, and allows sounds to overlap.
+_sound_cache: dict = {}
+
+def _get_sound(filename: str):
+    path = os.path.join(SCRIPT_DIR, filename)
+    if path not in _sound_cache:
+        _sound_cache[path] = (
+            pygame.mixer.Sound(path) if os.path.exists(path) else None
+        )
+    return _sound_cache[path]
+
+def play_sound(filename: str):
+    if QSettings("TheaterMode", "Settings").value(
+            f"mute_{filename}", False, type=bool):
+        return
     try:
-        # 1. Decode or stream the file
-        # stream_file is better for music/long files
-        stream = miniaudio.stream_file(path)
-        
-        # 2. Initialize the device
-        device = miniaudio.PlaybackDevice()
-        
-        # 3. Store in _cache to keep references alive
-        _cache[filename] = {'device': device, 'stream': stream}
-        
-        # 4. Start playback
-        device.start(stream)
-        
-    except Exception as e:
-        print(f"Failed to play {filename}: {e}")
+        snd = _get_sound(filename)
+        if snd is not None:
+            snd.play()
+    except Exception:
+        pass
+
         
 # ────────────────────────────────────────────────────────────────────────────
 
@@ -262,7 +267,7 @@ class TheaterOverlay(QOpenGLWidget):
         self.update()
 
     def start_fade(self):
-        play_sound("Fade.mp3")
+        play_sound("Fade.ogg")
         self.veil.on_show()
         self.state = 'theater'
         self.setCursor(Qt.ArrowCursor)
@@ -276,26 +281,26 @@ class TheaterOverlay(QOpenGLWidget):
     def on_primary_pressed(self):
         if self.veil_mode == "auto_dim":
             if self.state in ("hidden", "hiding"):
-                play_sound("Activate.mp3")
+                play_sound("Activate.ogg")
                 self._activate_auto_dim()
             elif self.state in ("theater", "paused"):
-                play_sound("Clear.mp3")
+                play_sound("Clear.ogg")
                 self.state = "hiding"
                 self.fade_to(0.0, 300, callback=self.reset_and_hide)
         else:
             # --- Original manual-selection behaviour ---
             if self.state in ('hidden', 'hiding'):
-                play_sound("Activate.mp3")
+                play_sound("Activate.ogg")
                 self.start_selection()
             elif self.state in ('theater', 'paused'):
-                play_sound("Clear.mp3")
+                play_sound("Clear.ogg")
                 self.state = 'hiding'
                 self.fade_to(0.0, 300, callback=self.reset_and_hide)
 
     def _activate_auto_dim(self):
         """Start the veil immediately covering all screens; AutoDimManager punches the hole."""
-        play_sound("Activate.mp3")
-        QTimer.singleShot(260, lambda: play_sound("Fade.mp3"))
+        play_sound("Activate.ogg")
+        QTimer.singleShot(260, lambda: play_sound("Fade.ogg"))
         self.update_geometry_for_all_screens()
         self.selection_rects = []
         self.veil.on_show()
@@ -313,7 +318,7 @@ class TheaterOverlay(QOpenGLWidget):
 
     def screensaver_activate(self):
         """Called by ScreensaverManager. Respects the current veil mode."""
-        play_sound("Fade.mp3")
+        play_sound("Fade.ogg")
         self.update_geometry_for_all_screens()
         self.selection_rects = []
         self.veil.on_show()
@@ -333,14 +338,14 @@ class TheaterOverlay(QOpenGLWidget):
 
     def toggle_pause(self):
         if self.state == 'theater':
-            play_sound("Pause.mp3")
+            play_sound("Pause.ogg")
             self.state = 'paused'
             self.veil.on_hide()
             if self.auto_dim_manager:
                 self.auto_dim_manager.stop()
             self.fade_to(0.0, self.fade_duration_pause, callback=self.hide)
         elif self.state == 'paused':
-            play_sound("Unpause.mp3")
+            play_sound("Unpause.ogg")
             self.state = 'theater'
             self.show()
             self.veil.on_show()
@@ -511,13 +516,13 @@ class ScreensaverManager(QObject):
 
     def _activate(self):
         self._ss_active = True
-        play_sound("Activate.mp3")
+        play_sound("Activate.ogg")
         self.overlay.screensaver_activate()
 
     def _deactivate(self):
         self._ss_active = False
         if self.overlay.state in ("theater", "paused", "hiding"):
-            play_sound("Clear.mp3")
+            play_sound("Clear.ogg")
             self.overlay.state = "hiding"
             self.overlay.fade_to(0.0, 300, callback=self.overlay.reset_and_hide)
 
@@ -539,6 +544,7 @@ class AppController(QObject):
 
         # Safety nets for app exit
         self.app.aboutToQuit.connect(winutils.release_cursor_lock)
+        self.app.aboutToQuit.connect(self.hotkey_mgr.pause)
         
         # ── Initialize MouseUnSnag logic natively ──
         self.mus_options = mus.Options()
@@ -547,7 +553,7 @@ class AppController(QObject):
 
         self.mus_logic = mus.MouseLogic(self.mus_options)
         # Hook up a callback for wrapping events
-        self.mus_logic.on_wrap = lambda: play_sound("wrap.mp3")
+        self.mus_logic.on_wrap = lambda: play_sound("wrap.ogg")
 
         mus._rebuild_displays(self.mus_logic)
 
@@ -647,7 +653,7 @@ class AppController(QObject):
                                 # 0 selected items strictly means empty workspace space was double-clicked
                                 if selected_count == 0:
                                     winutils.toggle_desktop_icons()
-                                    play_sound("hide.mp3")
+                                    play_sound("hide.ogg")
                     self._last_click_time = 0.0
                 else:
                     self._last_click_time = now
@@ -669,7 +675,7 @@ class AppController(QObject):
         self.settings.setValue("wrap_mouse", state)
 
     def toggle_cursor_lock(self):
-        play_sound("Cursorlock.wav")
+        play_sound("Cursorlock.ogg")
         self.cursor_locked = not self.cursor_locked
         if self.cursor_locked:
             hwnd = winutils.get_foreground_window()
@@ -679,7 +685,7 @@ class AppController(QObject):
             winutils.release_cursor_lock()
 
     def toggle_always_on_top(self):
-        play_sound("AOT.wav")
+        play_sound("AOT.ogg")
         winutils.toggle_always_on_top()
 
     def show_settings(self):

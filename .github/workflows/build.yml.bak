@@ -33,7 +33,7 @@ jobs:
 
     - name: Compile with PyInstaller
       run: |
-        python -m PyInstaller DMod.spec
+        python -m PyInstaller --clean DMod.spec
         
     - name: Delete existing release if present
       run: |
