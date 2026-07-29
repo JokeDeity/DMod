@@ -1,14 +1,14 @@
 import sys
 import os
+import time
 import ctypes
+import ctypes.wintypes
 import threading
-import queue
-import traceback
+import subprocess
 from PyQt5.QtWidgets import QApplication, QWidget, QSystemTrayIcon, QMenu, QOpenGLWidget
 from PyQt5.QtCore import Qt, QRect, QPropertyAnimation, pyqtProperty, pyqtSignal, QObject, QSettings, QEasingCurve, QTimer
 from PyQt5.QtGui import QPainter, QColor, QPen, QIcon, QPixmap, QSurfaceFormat
-from PyQt5.QtOpenGL import QGLFormat
-from pynput import keyboard, mouse as pynput_mouse
+from pynput import keyboard
 from os import environ
 environ['PYGAME_HIDE_SUPPORT_PROMPT'] = '1'
 import pygame
@@ -23,13 +23,7 @@ _cache = {}
 
 # ── Sound setup ────────────────────────────────────────────────────────────
 pygame.mixer.init()
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
-# Sound cache: load each file once as a Sound object.
-# pygame.mixer.music resets the audio stream on every load() call (it is
-# designed for background music), causing the audio device fragmentation,
-# popping, and latency reported over time.  mixer.Sound keeps the device
-# open, plays instantly, and allows sounds to overlap.
 _sound_cache: dict = {}
 
 def _get_sound(filename: str):
@@ -51,7 +45,7 @@ def play_sound(filename: str):
     except Exception:
         pass
 
-        
+
 # ────────────────────────────────────────────────────────────────────────────
 
 class HotkeyManager(QObject):
@@ -60,6 +54,7 @@ class HotkeyManager(QObject):
     secondary_triggered = pyqtSignal()
     cursorlock_triggered = pyqtSignal()
     aot_triggered = pyqtSignal()
+    network_triggered = pyqtSignal()
 
     def __init__(self):
         super().__init__()
@@ -69,6 +64,8 @@ class HotkeyManager(QObject):
         self.secondary_str = self.settings.value("secondary_hotkey", "<shift>+<ctrl>+<f3>")
         self.cursorlock_str = self.settings.value("cursorlock_hotkey", "<f7>")
         self.aot_str = self.settings.value("aot_hotkey", "<f8>")
+        self.network_str = self.settings.value("network_hotkey", "<f10>")
+        
         self.primary_active = False
         self._held_keys = set()
         self.start_listener()
@@ -78,7 +75,11 @@ class HotkeyManager(QObject):
             self.listener.stop()
 
         self._held_keys = set()
-        self.primary_keys = set(keyboard.HotKey.parse(self.primary_str))
+
+        def is_valid(hk_str):
+            return bool(hk_str and hk_str.strip() and hk_str.upper() != "NONE")
+
+        self.primary_keys = set(keyboard.HotKey.parse(self.primary_str)) if is_valid(self.primary_str) else set()
         
         def on_primary_activate():
             self.primary_active = True
@@ -93,10 +94,14 @@ class HotkeyManager(QObject):
         def on_aot_activate():
             self.aot_triggered.emit()
 
-        self.primary_hk = keyboard.HotKey(keyboard.HotKey.parse(self.primary_str), on_primary_activate)
-        self.secondary_hk = keyboard.HotKey(keyboard.HotKey.parse(self.secondary_str), on_secondary_activate)
-        self.cursorlock_hk = keyboard.HotKey(keyboard.HotKey.parse(self.cursorlock_str), on_cursorlock_activate)
-        self.aot_hk = keyboard.HotKey(keyboard.HotKey.parse(self.aot_str), on_aot_activate)
+        def on_network_activate():
+            self.network_triggered.emit()
+
+        self.primary_hk = keyboard.HotKey(keyboard.HotKey.parse(self.primary_str), on_primary_activate) if is_valid(self.primary_str) else None
+        self.secondary_hk = keyboard.HotKey(keyboard.HotKey.parse(self.secondary_str), on_secondary_activate) if is_valid(self.secondary_str) else None
+        self.cursorlock_hk = keyboard.HotKey(keyboard.HotKey.parse(self.cursorlock_str), on_cursorlock_activate) if is_valid(self.cursorlock_str) else None
+        self.aot_hk = keyboard.HotKey(keyboard.HotKey.parse(self.aot_str), on_aot_activate) if is_valid(self.aot_str) else None
+        self.network_hk = keyboard.HotKey(keyboard.HotKey.parse(self.network_str), on_network_activate) if is_valid(self.network_str) else None
 
         def on_press(key):
             try:
@@ -106,10 +111,11 @@ class HotkeyManager(QObject):
                     return
                 self._held_keys.add(canonical_key)
 
-                self.primary_hk.press(canonical_key)
-                self.secondary_hk.press(canonical_key)
-                self.cursorlock_hk.press(canonical_key)
-                self.aot_hk.press(canonical_key)
+                if self.primary_hk: self.primary_hk.press(canonical_key)
+                if self.secondary_hk: self.secondary_hk.press(canonical_key)
+                if self.cursorlock_hk: self.cursorlock_hk.press(canonical_key)
+                if self.aot_hk: self.aot_hk.press(canonical_key)
+                if self.network_hk: self.network_hk.press(canonical_key)
             except AttributeError:
                 pass
 
@@ -118,10 +124,11 @@ class HotkeyManager(QObject):
                 canonical_key = self.listener.canonical(key)
                 self._held_keys.discard(canonical_key)
 
-                self.primary_hk.release(canonical_key)
-                self.secondary_hk.release(canonical_key)
-                self.cursorlock_hk.release(canonical_key)
-                self.aot_hk.release(canonical_key)
+                if self.primary_hk: self.primary_hk.release(canonical_key)
+                if self.secondary_hk: self.secondary_hk.release(canonical_key)
+                if self.cursorlock_hk: self.cursorlock_hk.release(canonical_key)
+                if self.aot_hk: self.aot_hk.release(canonical_key)
+                if self.network_hk: self.network_hk.release(canonical_key)
 
                 if self.primary_active:
                     if key in self.primary_keys or canonical_key in self.primary_keys:
@@ -161,6 +168,11 @@ class HotkeyManager(QObject):
         self.settings.setValue("aot_hotkey", combo)
         self.start_listener()
 
+    def set_network_hotkey(self, combo):
+        self.network_str = combo
+        self.settings.setValue("network_hotkey", combo)
+        self.start_listener()
+
 
 class TheaterOverlay(QOpenGLWidget):
     def __init__(self):
@@ -172,7 +184,6 @@ class TheaterOverlay(QOpenGLWidget):
         self.state = 'hidden'
         self.selection_rects = []
         self.current_rect = QRect()
-        self.start_pos = None
         self._opacity = 0.0
 
         self.target_opacity = float(self.settings.value("opacity", 0.9))
@@ -186,7 +197,7 @@ class TheaterOverlay(QOpenGLWidget):
 
         self.selection_shape = self.settings.value("selection_shape", "rectangle")
         self.veil_mode       = self.settings.value("veil_mode", "manual")
-        self.auto_dim_manager: "AutoDimManager | None" = None  # set by AppController
+        self.auto_dim_manager = None
         self.anim = QPropertyAnimation(self, b"overlayOpacity")
         self.anim.setEasingCurve(QEasingCurve.InOutQuad)
 
@@ -205,10 +216,8 @@ class TheaterOverlay(QOpenGLWidget):
         self.update()
 
     def set_veil_mode(self, mode: str):
-        """Switch between 'manual' (draw-to-select) and 'auto_dim' (track active window)."""
         self.veil_mode = mode
         self.settings.setValue("veil_mode", mode)
-        # Stop any running auto-dim tracking when switching away
         if mode != "auto_dim" and self.auto_dim_manager:
             self.auto_dim_manager.stop()
 
@@ -224,14 +233,8 @@ class TheaterOverlay(QOpenGLWidget):
         self.setGeometry(rect)
 
     def _set_clickthrough(self, enabled):
-        """
-        True: Clicks pass through (Theater Mode)
-        False: Clicks are caught by the window (Selection Mode)
-        """
         hwnd = int(self.winId())
-        # GWL_EXSTYLE constant
         GWL_EXSTYLE = -20
-        # WS_EX_LAYERED | WS_EX_TRANSPARENT
         WS_EX_LAYERED = 0x80000
         WS_EX_TRANSPARENT = 0x20
     
@@ -242,10 +245,7 @@ class TheaterOverlay(QOpenGLWidget):
         else:
             ctypes.windll.user32.SetWindowLongW(hwnd, GWL_EXSTYLE, style & ~WS_EX_TRANSPARENT)
     
-        # Also keep the Qt attribute in sync
         self.setAttribute(Qt.WA_TransparentForMouseEvents, enabled)
-
-    # Then update your state-changing methods:
 
     def start_selection(self):
         self.anim.stop()
@@ -256,7 +256,6 @@ class TheaterOverlay(QOpenGLWidget):
         self._opacity = 0.0
         self.update_geometry_for_all_screens()
         
-        # FIX: Restore TopMost flag and disable clickthrough for drawing
         winutils.set_window_topmost(int(self.winId()))
         self._set_clickthrough(False)
         
@@ -272,7 +271,6 @@ class TheaterOverlay(QOpenGLWidget):
         self.state = 'theater'
         self.setCursor(Qt.ArrowCursor)
         
-        # FIX: Restore TopMost flag and enable clickthrough for manual viewing
         winutils.set_window_topmost(int(self.winId()))
         self._set_clickthrough(True)
         
@@ -288,7 +286,6 @@ class TheaterOverlay(QOpenGLWidget):
                 self.state = "hiding"
                 self.fade_to(0.0, 300, callback=self.reset_and_hide)
         else:
-            # --- Original manual-selection behaviour ---
             if self.state in ('hidden', 'hiding'):
                 play_sound("Activate.ogg")
                 self.start_selection()
@@ -298,7 +295,6 @@ class TheaterOverlay(QOpenGLWidget):
                 self.fade_to(0.0, 300, callback=self.reset_and_hide)
 
     def _activate_auto_dim(self):
-        """Start the veil immediately covering all screens; AutoDimManager punches the hole."""
         play_sound("Activate.ogg")
         QTimer.singleShot(260, lambda: play_sound("Fade.ogg"))
         self.update_geometry_for_all_screens()
@@ -307,7 +303,6 @@ class TheaterOverlay(QOpenGLWidget):
         self.state = "theater"
         self.setCursor(Qt.ArrowCursor)
         
-        # FIX: Force OS-level clickthrough immediately on startup
         self._set_clickthrough(True)
         
         self.show()
@@ -317,14 +312,12 @@ class TheaterOverlay(QOpenGLWidget):
             self.auto_dim_manager.start()
 
     def screensaver_activate(self):
-        """Called by ScreensaverManager. Respects the current veil mode."""
         play_sound("Fade.ogg")
         self.update_geometry_for_all_screens()
         self.selection_rects = []
         self.veil.on_show()
         self.state = "theater"
             
-        # FIX: Restore TopMost and OS clickthrough for manual fullscreen
         winutils.set_window_topmost(int(self.winId()))
         self._set_clickthrough(True)
             
@@ -394,26 +387,21 @@ class TheaterOverlay(QOpenGLWidget):
     def paintEvent(self, event):
         painter = QPainter(self)
         
-        # 1. Clear the canvas (prevents trails)
         painter.setCompositionMode(QPainter.CompositionMode_Clear)
         painter.fillRect(self.rect(), Qt.transparent)
         painter.setCompositionMode(QPainter.CompositionMode_SourceOver)
         
         painter.setRenderHint(QPainter.Antialiasing)
 
-        # 2. SELECTION MODE: Draw both existing and current with chosen shape
         if self.state == 'selecting':
             pen = QPen(QColor(255, 255, 255, 200), 2, Qt.DashLine)
             
-            # Draw existing selections
             draw_selection_outlines(painter, self.selection_rects, self.selection_shape, pen)
             
-            # Draw currently active selection
             if not self.current_rect.isNull() and not self.current_rect.isEmpty():
                 draw_selection_outlines(painter, [self.current_rect], self.selection_shape, pen)
             return
 
-        # 3. THEATER MODE
         if self.state in ('theater', 'paused'):
             self.veil.paint(
                 painter, self.rect(), self.selection_rects, self._opacity, self.veil_color,
@@ -421,80 +409,92 @@ class TheaterOverlay(QOpenGLWidget):
             )
 
 
+# ── ZERO-POLLING AUTO DIM MANAGER ──────────────────────────────────────────
+EVENT_SYSTEM_FOREGROUND = 3
+WINEVENT_OUTOFCONTEXT = 0
+
+WinEventProcType = ctypes.WINFUNCTYPE(
+    None, ctypes.wintypes.HANDLE, ctypes.wintypes.DWORD, ctypes.wintypes.HWND,
+    ctypes.wintypes.LONG, ctypes.wintypes.LONG, ctypes.wintypes.DWORD, ctypes.wintypes.DWORD
+)
+
 class AutoDimManager(QObject):
     def __init__(self, overlay):
         super().__init__()
         self.overlay = overlay
-        self._timer = QTimer()
-        self._timer.setInterval(300)
-        self._timer.timeout.connect(self._poll)
         self._last_hwnd = 0
-        self._desktop_hidden = False # Tracks if we temporarily faded out
+        self._desktop_hidden = False
+        self.hook_id = None
+        self.hook_proc = WinEventProcType(self._win_event_callback)
 
     def start(self):
         self._last_hwnd = 0
         self._desktop_hidden = False
-        self._timer.start()
+        if not self.hook_id:
+            self.hook_id = ctypes.windll.user32.SetWinEventHook(
+                EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_FOREGROUND,
+                0, self.hook_proc, 0, 0, WINEVENT_OUTOFCONTEXT
+            )
 
     def stop(self):
-        self._timer.stop()
+        if self.hook_id:
+            ctypes.windll.user32.UnhookWinEvent(self.hook_id)
+            self.hook_id = None
 
-    def _poll(self):
-        hwnd, cls, _, _, _, _ = winutils.get_foreground_window_info()
+    def _win_event_callback(self, hWinEventHook, event, hwnd, idObject, idChild, dwEventThread, dwmsEventTime):
+        if not hwnd: return
+        
+        buf = ctypes.create_unicode_buffer(256)
+        ctypes.windll.user32.GetClassNameW(hwnd, buf, 256)
+        cls = buf.value
 
-        # 1. Desktop clicked: Smooth fade out, but keep the loop running
         if cls in ["Progman", "WorkerW"]:
             if not self._desktop_hidden and self.overlay.state == 'theater':
                 self.overlay.fade_to(0.0, self.overlay.fade_duration_pause)
                 self._desktop_hidden = True
             return
 
-        # 2. Skip invalid windows or the overlay itself
-        if not hwnd or cls in winutils.AUTODIM_EXEMPT_CLASSES or hwnd == int(self.overlay.winId()):
+        if cls in winutils.AUTODIM_EXEMPT_CLASSES or hwnd == int(self.overlay.winId()):
             return
 
-        # 3. Valid app clicked: Smooth fade back in if we were hiding
         if self._desktop_hidden and self.overlay.state == 'theater':
             self.overlay.fade_to(self.overlay.target_opacity, self.overlay.fade_duration_pause)
             self._desktop_hidden = False
 
-        # 4. Stack the veil behind the active app
         if hwnd != self._last_hwnd:
             self._last_hwnd = hwnd
             winutils.set_window_z_order(int(self.overlay.winId()), hwnd)
+# ────────────────────────────────────────────────────────────────────────────
 
 
 class ScreensaverManager(QObject):
-    """
-    Monitors system idle time via GetLastInputInfo and auto-activates the
-    veil when the user has been idle for the configured duration.
-    Dismissed automatically as soon as any input is detected.
-    """
-
     def __init__(self, overlay, settings):
         super().__init__()
-        self.overlay  = overlay
+        self.overlay = overlay
         self.settings = settings
-        self._ss_active   = False
-        self._enabled     = settings.value("screensaver_enabled", False, type=bool)
-        self._timeout_ms  = settings.value("screensaver_timeout_min", 5, type=int) * 60_000
+        self._ss_active = False
+        self._enabled = settings.value("screensaver_enabled", False, type=bool)
+        self._timeout_ms = settings.value("screensaver_timeout_min", 5, type=int) * 60_000
 
         self._timer = QTimer()
-        self._timer.setInterval(8_000)        # Check every 8 s — negligible overhead
-        self._timer.timeout.connect(self._check)
+        self._timer.setInterval(1_000)  # Check timeout frequency
+        self._timer.timeout.connect(self._check_timeout)
+
+        self._mouse_hook_id = None
+        self._keyboard_hook_id = None
+        self._mouse_hook_callback = None
+        self._keyboard_hook_callback = None
 
         if self._enabled:
-            self._timer.start()
-
-    # ── Public API ────────────────────────────────────────────────────────────
+            self._start()
 
     def set_enabled(self, enabled: bool):
         self._enabled = enabled
         self.settings.setValue("screensaver_enabled", enabled)
         if enabled:
-            self._timer.start()
+            self._start()
         else:
-            self._timer.stop()
+            self._stop()
             if self._ss_active:
                 self._deactivate()
 
@@ -502,15 +502,72 @@ class ScreensaverManager(QObject):
         self._timeout_ms = minutes * 60_000
         self.settings.setValue("screensaver_timeout_min", minutes)
 
-    # ── Internal ──────────────────────────────────────────────────────────────
+    def _start(self):
+        self._timer.start()
+        self._install_hook()
 
-    def _check(self):
-        idle_ms = winutils.get_idle_time_ms()
-        if self._ss_active:
-            # Dismiss the moment any real input is detected (< 2 s idle)
-            if idle_ms < 2_000:
-                self._deactivate()
-        else:
+    def _stop(self):
+        self._timer.stop()
+        self._remove_hook()
+
+    def _install_hook(self):
+        if self._mouse_hook_id or self._keyboard_hook_id:
+            return
+
+        WH_MOUSE_LL = 14
+        WH_KEYBOARD_LL = 13
+        
+        _u32 = ctypes.WinDLL("user32", use_last_error=True)
+        _k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+
+        CMPFUNC = ctypes.WINFUNCTYPE(ctypes.wintypes.LPARAM, ctypes.c_int, ctypes.wintypes.WPARAM, ctypes.wintypes.LPARAM)
+
+        _u32.SetWindowsHookExW.argtypes = [ctypes.c_int, CMPFUNC, ctypes.wintypes.HINSTANCE, ctypes.wintypes.DWORD]
+        _u32.SetWindowsHookExW.restype = ctypes.wintypes.HHOOK
+        
+        _u32.CallNextHookEx.argtypes = [ctypes.wintypes.HHOOK, ctypes.c_int, ctypes.wintypes.WPARAM, ctypes.wintypes.LPARAM]
+        _u32.CallNextHookEx.restype = ctypes.wintypes.LPARAM
+        
+        _k32.GetModuleHandleW.argtypes = [ctypes.wintypes.LPCWSTR]
+        _k32.GetModuleHandleW.restype = ctypes.wintypes.HINSTANCE
+
+        def low_level_mouse_handler(nCode, wParam, lParam):
+            if nCode >= 0 and self._ss_active:
+                QTimer.singleShot(0, self._deactivate)
+            return _u32.CallNextHookEx(self._mouse_hook_id, nCode, wParam, lParam)
+
+        def low_level_keyboard_handler(nCode, wParam, lParam):
+            if nCode >= 0 and self._ss_active:
+                QTimer.singleShot(0, self._deactivate)
+            return _u32.CallNextHookEx(self._keyboard_hook_id, nCode, wParam, lParam)
+
+        self._mouse_hook_callback = CMPFUNC(low_level_mouse_handler)
+        self._keyboard_hook_callback = CMPFUNC(low_level_keyboard_handler)
+
+        mod_handle = _k32.GetModuleHandleW(None)
+
+        self._mouse_hook_id = _u32.SetWindowsHookExW(
+            WH_MOUSE_LL, self._mouse_hook_callback, mod_handle, 0
+        )
+        self._keyboard_hook_id = _u32.SetWindowsHookExW(
+            WH_KEYBOARD_LL, self._keyboard_hook_callback, mod_handle, 0
+        )
+
+    def _remove_hook(self):
+        _u32 = ctypes.WinDLL("user32", use_last_error=True)
+        _u32.UnhookWindowsHookEx.argtypes = [ctypes.wintypes.HHOOK]
+        _u32.UnhookWindowsHookEx.restype = ctypes.wintypes.BOOL
+
+        if self._mouse_hook_id:
+            _u32.UnhookWindowsHookEx(self._mouse_hook_id)
+            self._mouse_hook_id = None
+        if self._keyboard_hook_id:
+            _u32.UnhookWindowsHookEx(self._keyboard_hook_id)
+            self._keyboard_hook_id = None
+
+    def _check_timeout(self):
+        if not self._ss_active:
+            idle_ms = winutils.get_idle_time_ms()
             if idle_ms >= self._timeout_ms and self.overlay.state == "hidden":
                 self._activate()
 
@@ -520,6 +577,8 @@ class ScreensaverManager(QObject):
         self.overlay.screensaver_activate()
 
     def _deactivate(self):
+        if not self._ss_active:
+            return
         self._ss_active = False
         if self.overlay.state in ("theater", "paused", "hiding"):
             play_sound("Clear.ogg")
@@ -535,24 +594,25 @@ class AppController(QObject):
         self.overlay = TheaterOverlay()
         self.hotkey_mgr = HotkeyManager()
         self.cursor_locked = False
+        
+        self._mouse_hook_id = None
+        self._mouse_hook_callback = None
 
         self.hotkey_mgr.primary_pressed.connect(self.overlay.on_primary_pressed)
         self.hotkey_mgr.primary_released.connect(self.overlay.on_primary_released)
         self.hotkey_mgr.secondary_triggered.connect(self.overlay.toggle_pause)
         self.hotkey_mgr.cursorlock_triggered.connect(self.toggle_cursor_lock)
         self.hotkey_mgr.aot_triggered.connect(self.toggle_always_on_top)
+        self.hotkey_mgr.network_triggered.connect(self.toggle_network)
 
-        # Safety nets for app exit
         self.app.aboutToQuit.connect(winutils.release_cursor_lock)
         self.app.aboutToQuit.connect(self.hotkey_mgr.pause)
         
-        # ── Initialize MouseUnSnag logic natively ──
         self.mus_options = mus.Options()
         self.mus_options.set_unsnag(self.settings.value("unsnag_mouse", False, type=bool))
         self.mus_options.set_wrap(self.settings.value("wrap_mouse", False, type=bool))
 
         self.mus_logic = mus.MouseLogic(self.mus_options)
-        # Hook up a callback for wrapping events
         self.mus_logic.on_wrap = lambda: play_sound("wrap.ogg")
 
         mus._rebuild_displays(self.mus_logic)
@@ -568,18 +628,13 @@ class AppController(QObject):
 
         self.mus_hook_thread = threading.Thread(target=self.mus_hook.pump, daemon=True)
         self.mus_hook_thread.start()
-        # ──────────────────────────────────────────
 
-        # ── Desktop icon double-click toggle ──
         self._desktop_icon_toggle_enabled = self.settings.value("desktop_icon_toggle", False, type=bool)
         self._last_click_time = 0.0
-        self._mouse_listener = None
         if self._desktop_icon_toggle_enabled:
             self._start_desktop_mouse_listener()
         self.app.aboutToQuit.connect(self._stop_desktop_mouse_listener)
-        # ─────────────────────────────────────
 
-        # Pass self so SettingsWindow can access everything
         self.auto_dim_manager   = AutoDimManager(self.overlay)
         self.screensaver_mgr    = ScreensaverManager(self.overlay, self.settings)
         self.overlay.auto_dim_manager = self.auto_dim_manager
@@ -595,12 +650,35 @@ class AppController(QObject):
         else:
             self._stop_desktop_mouse_listener()
 
-    def _start_desktop_mouse_listener(self):
-        if self._mouse_listener is not None:
-            return
-        import time as _time
+    def toggle_network(self):
+        """Toggles the overall network layer state (disables/enables physical network adapters)."""
+        play_sound("Activate.ogg")
+        def _run():
+            script = (
+                "$adapters = Get-NetAdapter | Where-Object {$_.Status -ne 'Disarmed'}; "
+                "$connected = $adapters | Where-Object {$_.Status -eq 'Up'}; "
+                "if ($connected) { "
+                "   $adapters | Disable-NetAdapter -Confirm:$false -PassThru "
+                "} else { "
+                "   $adapters | Enable-NetAdapter -Confirm:$false -PassThru "
+                "}"
+            )
+            try:
+                subprocess.run(["powershell", "-NoProfile", "-Command", script], capture_output=True, creationflags=subprocess.CREATE_NO_WINDOW)
+            except Exception:
+                pass
+        threading.Thread(target=_run, daemon=True).start()
 
+    def _start_desktop_mouse_listener(self):
+        if getattr(self, '_mouse_hook_id', None):
+            return
+
+        WH_MOUSE_LL = 14
+        WM_LBUTTONDOWN = 0x0201
+        
         _u32 = ctypes.WinDLL("user32", use_last_error=True)
+        _k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        
         _u32.WindowFromPoint.restype = ctypes.c_void_p
         _u32.GetClassNameW.restype   = ctypes.c_int
         _u32.GetAncestor.restype     = ctypes.c_void_p
@@ -612,6 +690,17 @@ class AppController(QObject):
         _u32.FindWindowExW.restype   = ctypes.c_void_p
         _u32.SendMessageW.argtypes   = [ctypes.c_void_p, ctypes.c_uint, ctypes.c_void_p, ctypes.c_void_p]
         _u32.SendMessageW.restype    = ctypes.c_ssize_t
+
+        CMPFUNC = ctypes.WINFUNCTYPE(ctypes.wintypes.LPARAM, ctypes.c_int, ctypes.wintypes.WPARAM, ctypes.wintypes.LPARAM)
+
+        _u32.SetWindowsHookExW.argtypes = [ctypes.c_int, CMPFUNC, ctypes.wintypes.HINSTANCE, ctypes.wintypes.DWORD]
+        _u32.SetWindowsHookExW.restype = ctypes.wintypes.HHOOK
+        
+        _u32.CallNextHookEx.argtypes = [ctypes.wintypes.HHOOK, ctypes.c_int, ctypes.wintypes.WPARAM, ctypes.wintypes.LPARAM]
+        _u32.CallNextHookEx.restype = ctypes.wintypes.LPARAM
+        
+        _k32.GetModuleHandleW.argtypes = [ctypes.wintypes.LPCWSTR]
+        _k32.GetModuleHandleW.restype = ctypes.wintypes.HINSTANCE
 
         self._last_click_time = 0.0
         DOUBLE_CLICK_THRESHOLD = 0.4
@@ -632,39 +721,54 @@ class AppController(QObject):
                 return _u32.FindWindowExW(shell_view, 0, "SysListView32", None)
             return 0
 
-        def on_click(x, y, button, pressed):
-            if pressed and button == pynput_mouse.Button.left:
-                now = _time.time()
-                if now - self._last_click_time < DOUBLE_CLICK_THRESHOLD:
-                    pt = ctypes.c_longlong((int(y) << 32) | (int(x) & 0xFFFFFFFF))
-                    hwnd = _u32.WindowFromPoint(pt)
-                    
-                    if hwnd:
-                        root = _u32.GetAncestor(hwnd, 2) # GA_ROOT = 2
-                        buf = ctypes.create_unicode_buffer(256)
-                        _u32.GetClassNameW(root, buf, 256)
-                        cls = buf.value
-                        
-                        if cls in ("Progman", "WorkerW"):
-                            lv_hwnd = get_desktop_listview()
-                            if lv_hwnd:
-                                # Send LVM_GETSELECTEDCOUNT (0x1032)
-                                selected_count = _u32.SendMessageW(lv_hwnd, 0x1032, 0, 0)
-                                # 0 selected items strictly means empty workspace space was double-clicked
-                                if selected_count == 0:
-                                    winutils.toggle_desktop_icons()
-                                    play_sound("hide.ogg")
-                    self._last_click_time = 0.0
-                else:
-                    self._last_click_time = now
+        class MSLLHOOKSTRUCT(ctypes.Structure):
+            _fields_ = [("x", ctypes.c_long),
+                        ("y", ctypes.c_long),
+                        ("data", ctypes.c_uint32),
+                        ("flags", ctypes.c_uint32),
+                        ("time", ctypes.c_uint32),
+                        ("extra", ctypes.POINTER(ctypes.c_ulong))]
 
-        self._mouse_listener = pynput_mouse.Listener(on_click=on_click)
-        self._mouse_listener.start()
+        def low_level_mouse_handler(nCode, wParam, lParam):
+            if nCode >= 0:
+                if wParam == WM_LBUTTONDOWN:
+                    now = time.time()
+                    if now - self._last_click_time < DOUBLE_CLICK_THRESHOLD:
+                        hook_struct = ctypes.cast(lParam, ctypes.POINTER(MSLLHOOKSTRUCT)).contents
+                        pt = ctypes.c_longlong((int(hook_struct.y) << 32) | (int(hook_struct.x) & 0xFFFFFFFF))
+                        hwnd = _u32.WindowFromPoint(pt)
+                        
+                        if hwnd:
+                            root = _u32.GetAncestor(hwnd, 2)
+                            buf = ctypes.create_unicode_buffer(256)
+                            _u32.GetClassNameW(root, buf, 256)
+                            cls = buf.value
+                            
+                            if cls in ("Progman", "WorkerW"):
+                                lv_hwnd = get_desktop_listview()
+                                if lv_hwnd:
+                                    selected_count = _u32.SendMessageW(lv_hwnd, 0x1032, 0, 0)
+                                    if selected_count == 0:
+                                        winutils.toggle_desktop_icons()
+                                        play_sound("hide.ogg")
+                        self._last_click_time = 0.0
+                    else:
+                        self._last_click_time = now
+
+            return _u32.CallNextHookEx(self._mouse_hook_id, nCode, wParam, lParam)
+
+        self._mouse_hook_callback = CMPFUNC(low_level_mouse_handler)
+        self._mouse_hook_id = _u32.SetWindowsHookExW(
+            WH_MOUSE_LL, self._mouse_hook_callback, _k32.GetModuleHandleW(None), 0
+        )
 
     def _stop_desktop_mouse_listener(self):
-        if self._mouse_listener is not None:
-            self._mouse_listener.stop()
-            self._mouse_listener = None
+        if getattr(self, '_mouse_hook_id', None):
+            _u32 = ctypes.WinDLL("user32", use_last_error=True)
+            _u32.UnhookWindowsHookEx.argtypes = [ctypes.wintypes.HHOOK]
+            _u32.UnhookWindowsHookEx.restype = ctypes.wintypes.BOOL
+            _u32.UnhookWindowsHookEx(self._mouse_hook_id)
+            self._mouse_hook_id = None
 
     def set_unsnag(self, state: bool):
         self.mus_options.set_unsnag(state)

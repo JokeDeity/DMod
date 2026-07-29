@@ -14,14 +14,18 @@ import random
 
 from veils_base import VeilBase, _clear_holes
 from gpu_veils import ShaderWavesVeil
-from PyQt5.QtCore import Qt, QTimer, QRect, QPointF
-from PyQt5.QtGui import QPainter, QColor, QImage, QPixmap, QMovie, QRadialGradient, QLinearGradient, QPainterPath, QFont
+from PyQt5.QtWidgets import QApplication
+from PyQt5.QtCore import Qt, QTimer, QRect, QPointF, QSize
+from PyQt5.QtGui import (
+    QPainter, QColor, QImage, QPixmap, QMovie,
+    QRadialGradient, QLinearGradient, QPainterPath,
+    QFont, QPen, QPolygonF
+)
 
 # Ensure shapes.py exists in the same directory as this file
 try:
     from shapes import clear_selection_holes
 except ImportError:
-    # Fallback definition if clear_selection_holes is missing to prevent crash
     def clear_selection_holes(painter, selection_rects, selection_shape):
         pass
 
@@ -29,7 +33,6 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # ── Shared optimizations ──────────────────────────────────────────────────────
 
-# Pre-compute frequently used constants
 TWO_PI = math.pi * 2
 HALF_PI = math.pi / 2
 
@@ -71,7 +74,7 @@ class WavesVeil(VeilBase):
         super().__init__()
         self._t = 0.0
         self._timer = QTimer()
-        self._timer.setInterval(40)  # Increased from 33 to reduce CPU
+        self._timer.setInterval(40)
         self._timer.timeout.connect(self._tick)
 
     def _tick(self):
@@ -89,7 +92,7 @@ class WavesVeil(VeilBase):
         painter.fillRect(full_rect, base)
 
         painter.save()
-        painter.setRenderHint(QPainter.Antialiasing, False)  # Disable for perf
+        painter.setRenderHint(QPainter.Antialiasing, False)
         painter.setOpacity(opacity * 0.45)
         
         t = self._t
@@ -122,7 +125,7 @@ class Waves2Veil(VeilBase):
         super().__init__()
         self._t = 0.0
         self._timer = QTimer()
-        self._timer.setInterval(50)  # Increased from 40 for better perf
+        self._timer.setInterval(50)
         self._timer.timeout.connect(self._tick)
 
     def _tick(self):
@@ -187,7 +190,7 @@ class LineWavesVeil(VeilBase):
         super().__init__()
         self._t = 0.0
         self._timer = QTimer()
-        self._timer.setInterval(40)  # Increased from 33
+        self._timer.setInterval(40)
         self._timer.timeout.connect(self._tick)
 
     def _tick(self):
@@ -248,19 +251,14 @@ class LineWavesVeil(VeilBase):
 
 # ── 5. Ambient Colors ─────────────────────────────────────────────────────
 
-import math
-from PyQt5.QtCore import QTimer, QSize
-from PyQt5.QtGui import QColor, QRadialGradient, QPainter, QImage
-from veils_base import VeilBase, _clear_holes
-
 class AmbientColorVeil(VeilBase):
     def __init__(self):
         super().__init__()
         self._t = 0.0
         self._timer = QTimer()
-        self._timer.setInterval(70)  # Low overhead frame pace
+        self._timer.setInterval(70)
         self._timer.timeout.connect(self._tick)
-        self._buffer = None          # Persistent reuse buffer
+        self._buffer = None
         self._buf_size = QSize(0, 0)
 
     def _tick(self):
@@ -273,47 +271,42 @@ class AmbientColorVeil(VeilBase):
         
     def on_hide(self): 
         self._timer.stop()
-        self._buffer = None          # Drop allocation when hidden
+        self._buffer = None
         self._buf_size = QSize(0, 0)
 
-    def paint(self, painter, full_rect, selection_rects, opacity, color, selection_shape="rectangle"):
+    def paint(self, painter, full_rect, selection_rects, opacity, color, selection_shape='rectangle'):
         w, h, t = full_rect.width(), full_rect.height(), self._t
+        
         if w <= 0 or h <= 0:
             return
-
-        # 1. Downscale the buffer resolution (15% scale factor)
-        # This cuts pixel rendering overhead by over 95% on the CPU thread
+            
         scale = 0.15
         buf_w = max(16, int(w * scale))
         buf_h = max(16, int(h * scale))
         target_size = QSize(buf_w, buf_h)
-
-        # Manage/Reuse the low-res offscreen surface
+        
         if self._buffer is None or self._buf_size != target_size:
             self._buffer = QImage(target_size, QImage.Format_ARGB32_Premultiplied)
             self._buf_size = target_size
         
         self._buffer.fill(QColor(0, 0, 0, 0))
-
+        
         side_painter = QPainter(self._buffer)
         side_painter.setRenderHint(QPainter.Antialiasing, False)
-
-        # 2. Paint base theme canvas into the tiny buffer
+        
         base = QColor(8, 8, 12, 255)
         side_painter.fillRect(0, 0, buf_w, buf_h, base)
-
-        # 3. Render additive glow blobs relative to the low-res coordinate space
         side_painter.setCompositionMode(QPainter.CompositionMode_Plus)
         
         blobs = [
             (math.sin(t * 0.29) * 0.3 + 0.5, math.cos(t * 0.19) * 0.3 + 0.5, QColor(80, 10, 160)),
-            (math.sin(t * 0.21 + 1.5) * 0.3 + 0.4, math.cos(t * 0.31 + 0.7) * 0.3 + 0.6, QColor(10, 130, 155)),
-            (math.sin(t * 0.26 + 3.1) * 0.3 + 0.6, math.cos(t * 0.16 + 2.0) * 0.3 + 0.4, QColor(160, 10, 90)),
-            (math.sin(t * 0.18 + 2.0) * 0.3 + 0.5, math.cos(t * 0.23 + 1.1) * 0.3 + 0.5, QColor(10, 130, 130)),
+            (math.sin(t * 0.21 + 1.5) * 0.3 + 0.6, math.cos(t * 0.31 + 0.7) * 0.3 + 0.4, QColor(160, 10, 90)),
+            (math.sin(t * 0.18 + 2.0) * 0.3 + 0.5, math.cos(t * 0.23 + 1.1) * 0.3 + 0.5, QColor(10, 130, 130))
         ]
+        
         radius = int(max(buf_w, buf_h) * 0.72)
         target_alpha = 160
-
+        
         for cx_f, cy_f, c in blobs:
             cx = int(cx_f * buf_w)
             cy = int(cy_f * buf_h)
@@ -330,12 +323,9 @@ class AmbientColorVeil(VeilBase):
             side_painter.fillRect(0, 0, buf_w, buf_h, grad)
             
         side_painter.end()
-
-        # 4. Upscale the pre-blended buffer to screen coordinates using hardware acceleration
+        
         painter.save()
         painter.setOpacity(opacity)
-        
-        # Forces smooth bilinear interpolation across the screen canvas
         painter.setRenderHint(QPainter.SmoothPixmapTransform, True)
         painter.drawImage(full_rect, self._buffer)
         painter.restore()
@@ -350,7 +340,7 @@ class DarkAmbientColorVeil(VeilBase):
         super().__init__()
         self._t = 0.0
         self._timer = QTimer()
-        self._timer.setInterval(80)  # Increased from 60 for better perf
+        self._timer.setInterval(80)
         self._timer.timeout.connect(self._tick)
 
     def _tick(self):
@@ -361,37 +351,39 @@ class DarkAmbientColorVeil(VeilBase):
     def on_show(self): self._timer.start()
     def on_hide(self): self._timer.stop()
 
-    def paint(self, painter, full_rect, selection_rects, opacity, color, selection_shape="rectangle"):
+    def paint(self, painter, full_rect, selection_rects, opacity, color, selection_shape='rectangle'):
         w, h, t = full_rect.width(), full_rect.height(), self._t
-
+        
         base = QColor(20, 20, 25)
         base.setAlpha(int(opacity * 255))
         painter.fillRect(full_rect, base)
-
+        
         blobs = [
             (math.sin(t * 0.15) * 0.3 + 0.5, math.cos(t * 0.1) * 0.3 + 0.5, QColor(80, 20, 100)),
-            (math.sin(t * 0.12 + 1.5) * 0.3 + 0.4, math.cos(t * 0.2 + 0.7) * 0.3 + 0.6, QColor(20, 70, 120)),
-            (math.sin(t * 0.18 + 3.1) * 0.3 + 0.6, math.cos(t * 0.12 + 2.0) * 0.3 + 0.4, QColor(110, 20, 60)),
-            (math.sin(t * 0.1 * 2.0) * 0.3 + 0.5, math.cos(t * 0.15 + 1.1) * 0.3 + 0.5, QColor(20, 100, 80)),
+            (math.sin(t * 0.12 + 1.5) * 0.3 + 0.6, math.cos(t * 0.15 + 1.1) * 0.3 + 0.5, QColor(20, 100, 80))
         ]
+        
         radius = int(max(w, h) * 0.6)
-
+        
         painter.save()
         painter.setCompositionMode(QPainter.CompositionMode_SourceOver)
         painter.setOpacity(opacity * 0.6)
+        
         for cx_f, cy_f, c in blobs:
             cx = full_rect.x() + int(cx_f * w)
             cy = full_rect.y() + int(cy_f * h)
             grad = QRadialGradient(cx, cy, radius)
+            
             c_full = QColor(c)
             c_full.setAlpha(140)
             c_edge = QColor(c)
             c_edge.setAlpha(0)
+            
             grad.setColorAt(0.0, c_full)
             grad.setColorAt(1.0, c_edge)
             painter.fillRect(full_rect, grad)
+            
         painter.restore()
-
         _clear_holes(painter, selection_rects, selection_shape)
 
 
@@ -401,7 +393,7 @@ class StarfieldVeil(VeilBase):
     def __init__(self):
         super().__init__()
         self._timer = QTimer()
-        self._timer.setInterval(40)  # Increased from 30
+        self._timer.setInterval(40)
         self._timer.timeout.connect(self._tick)
         self._stars = []
 
@@ -410,7 +402,7 @@ class StarfieldVeil(VeilBase):
             w, h = self._parent.width(), self._parent.height()
             self._stars = [
                 [random.randint(0, w), random.randint(0, h), random.uniform(0.3, 1.8), random.uniform(2.0, 5.5), random.uniform(0.4, 1.0)]
-                for _ in range(120)  # Reduced from 150
+                for _ in range(120)
             ]
 
         if self._parent:
@@ -451,14 +443,14 @@ class ConstellationVeil(VeilBase):
     def __init__(self):
         super().__init__()
         self._timer = QTimer()
-        self._timer.setInterval(40)  # Increased from 33
+        self._timer.setInterval(40)
         self._timer.timeout.connect(self._tick)
         self._nodes = []
 
     def _tick(self):
         if not self._nodes and self._parent:
             w, h = self._parent.width(), self._parent.height()
-            self._nodes = [[random.uniform(0, w), random.uniform(0, h), random.uniform(-1.0, 1.0), random.uniform(-1.0, 1.0)] for _ in range(50)]  # Reduced from 60
+            self._nodes = [[random.uniform(0, w), random.uniform(0, h), random.uniform(-1.0, 1.0), random.uniform(-1.0, 1.0)] for _ in range(50)]
             
         if self._parent:
             w, h = self._parent.width(), self._parent.height()
@@ -483,8 +475,7 @@ class ConstellationVeil(VeilBase):
         n_color = QColor(245, 245, 255)
         p = painter.pen()
         
-        # Reduced connection distance to reduce line draws
-        max_dist = 160  # Reduced from 190
+        max_dist = 160
         for i in range(len(self._nodes)):
             for j in range(i + 1, len(self._nodes)):
                 n1, n2 = self._nodes[i], self._nodes[j]
@@ -516,13 +507,13 @@ class CyberRainVeil(VeilBase):
     def __init__(self):
         super().__init__()
         self._timer = QTimer()
-        self._timer.setInterval(70)  # Increased from 50 to drop CPU usage
+        self._timer.setInterval(70)
         self._timer.timeout.connect(self._tick)
         self._streams = []
 
     def _tick(self):
         if not self._streams and self._parent:
-            cols = max(10, self._parent.width() // 50)  # Reduced density slightly
+            cols = max(10, self._parent.width() // 50)
             self._streams = [
                 [i * 50, random.randint(-400, 0), random.randint(4, 12), random.randint(5, 15)]
                 for i in range(cols)
@@ -558,7 +549,6 @@ class CyberRainVeil(VeilBase):
                     grad_alpha = int((1.0 - (k / length)) * opacity * 220)
                     c = QColor(stream_color)
                     c.setAlpha(grad_alpha)
-                    # Swapped expensive drawRoundedRect for fillRect
                     painter.fillRect(cx, tick_y, 4, 10, c)
                     
         painter.restore()
@@ -568,13 +558,8 @@ class CyberRainVeil(VeilBase):
 # ── 10. Matrix Digital Rain ──────────────────────────────────────────────
 
 class MatrixRainVeil(VeilBase):
-    """
-    Hybrid Grid-Bake approach: Smooth float-positioned white heads slide over 
-    an offscreen grid-locked green trail buffer. Includes active trail mutations 
-    to remove rigid patterns and drop GPU/CPU utilization to baseline levels.
-    """
-    _CW = 28   # column width / horizontal char step
-    _CH = 18   # row height  / vertical   char step
+    _CW = 28
+    _CH = 18
     CHARS = (
         "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
         "!@#$%^&*()_+-=[]{}|;:,.<>?"
@@ -587,14 +572,14 @@ class MatrixRainVeil(VeilBase):
     def __init__(self):
         super().__init__()
         self._timer = QTimer()
-        self._timer.setInterval(33)      # Smooth ~30 FPS cinematic cadence
+        self._timer.setInterval(33)
         self._timer.timeout.connect(self._tick)
         self._streams = []
         self._font = QFont("Courier New", 13, QFont.Bold)
-        self._buf = None                 # Persistent offscreen green trail layer
+        self._buf = None
         self._buf_sz = QSize(0, 0)
         self._m_color = QColor(30, 255, 40)
-        self._head_color = QColor(245, 255, 245) # Bright gleaming white head
+        self._head_color = QColor(245, 255, 245)
         self._last_color = None
 
     def _ensure_buf(self, size):
@@ -615,7 +600,6 @@ class MatrixRainVeil(VeilBase):
             }
             for i in range(cols)
         ]
-        # Set initial row boundary tracking sync
         for s in self._streams:
             s["last_spawned_row"] = int(s["y"] // self._CH)
 
@@ -632,50 +616,44 @@ class MatrixRainVeil(VeilBase):
         parent = self._parent
         if not parent:
             return
+        
         size = parent.size()
         self._ensure_buf(size)
-
+        
         if not self._streams:
             self._init_streams(size.width())
-
+            
         h = size.height()
-
         p = QPainter(self._buf)
         p.setFont(self._font)
-
-        # Uniformly blend down old trails inside the memory buffer
         p.fillRect(self._buf.rect(), QColor(5, 8, 5, 22))
-
+        
         for s in self._streams:
-            # Advance the head smoothly via pixel float velocity
-            s["y"] += s["speed"]
-            current_row = int(s["y"] // self._CH)
-
-            # When the head crosses into a new grid cell, stamp a stable green trail char behind it
-            if current_row > s["last_spawned_row"]:
-                col_seed = s["x"] // self._CW
-                for r in range(s["last_spawned_row"] + 1, current_row + 1):
+            s['y'] += s['speed']
+            current_row = int(s['y'] // self._CH)
+            
+            if current_row > s['last_spawned_row']:
+                col_seed = s['x'] // self._CW
+                for r in range(s['last_spawned_row'] + 1, current_row + 1):
                     hy = r * self._CH
                     if 0 <= hy <= h + self._CH:
                         p.setPen(self._m_color)
                         char_idx = (r + col_seed) % len(self.CHARS)
-                        p.drawText(s["x"], hy, self.CHARS[char_idx])
-                s["last_spawned_row"] = current_row
-
-            # Organic Mutation: 6% chance per frame to randomly glitch an active trail glyph
+                        p.drawText(s['x'], hy, self.CHARS[char_idx])
+                s['last_spawned_row'] = current_row
+            
             if random.random() < 0.06:
                 glitch_row = current_row - random.randint(1, 20)
                 glitch_hy = glitch_row * self._CH
                 if 0 <= glitch_hy <= h:
                     p.setPen(self._m_color)
-                    p.drawText(s["x"], glitch_hy, random.choice(self.CHARS))
-
-            # Recycle stream safely below visual range
-            if s["y"] > h + 250:
-                s["y"] = random.uniform(-400.0, -50.0)
-                s["speed"] = random.uniform(3.5, 7.5)
-                s["last_spawned_row"] = int(s["y"] // self._CH)
-
+                    p.drawText(s['x'], glitch_hy, random.choice(self.CHARS))
+            
+            if s['y'] > h + 250:
+                s['y'] = random.uniform(-400.0, -50.0)
+                s['speed'] = random.uniform(3.5, 7.5)
+                s['last_spawned_row'] = int(s['y'] // self._CH)
+                
         p.end()
         parent.update()
 
@@ -688,11 +666,7 @@ class MatrixRainVeil(VeilBase):
         if self._buf and not self._buf.isNull():
             painter.save()
             painter.setOpacity(opacity)
-            
-            # 1. Blit pre-rendered grid-locked trails instantly via hardware acceleration
             painter.drawImage(full_rect.topLeft(), self._buf)
-            
-            # 2. Layer smooth float-positioned white heads over the background
             painter.setFont(self._font)
             h = full_rect.height()
             
@@ -719,7 +693,7 @@ class RetroCrtVeil(VeilBase):
         super().__init__()
         self._offset = 0
         self._timer = QTimer()
-        self._timer.setInterval(60)  # Increased from 50
+        self._timer.setInterval(60)
         self._timer.timeout.connect(self._tick)
 
     def _tick(self):
@@ -737,7 +711,6 @@ class RetroCrtVeil(VeilBase):
 
         painter.save()
         p = painter.pen()
-        
         p.setColor(QColor(245, 245, 255, int(opacity * 150)))
         p.setWidth(2)
         painter.setPen(p)
@@ -760,7 +733,7 @@ class VhsGlitchVeil(VeilBase):
     def __init__(self):
         super().__init__()
         self._timer = QTimer()
-        self._timer.setInterval(80)  # Increased from 60
+        self._timer.setInterval(80)
         self._timer.timeout.connect(self._tick)
         self._glitches = []
 
@@ -800,7 +773,7 @@ class RadarVeil(VeilBase):
         super().__init__()
         self._angle = 0.0
         self._timer = QTimer()
-        self._timer.setInterval(40)  # Increased from 33
+        self._timer.setInterval(40)
         self._timer.timeout.connect(self._tick)
 
     def _tick(self):
@@ -823,7 +796,7 @@ class RadarVeil(VeilBase):
         r_color = QColor(color) if color != "#000000" else QColor(0, 255, 120)
         radius = max(full_rect.width(), full_rect.height())
 
-        for t_step in range(10):  # Reduced from 12
+        for t_step in range(10):
             trail_angle = self._angle - (t_step * 1.5)
             rad_angle = math.radians(trail_angle)
             
@@ -857,7 +830,7 @@ class GodRaysVeil(VeilBase):
         super().__init__()
         self._t = 0.0
         self._timer = QTimer()
-        self._timer.setInterval(50)  # Increased from 33 for better perf
+        self._timer.setInterval(50)
         self._timer.timeout.connect(self._tick)
 
     def _tick(self):
@@ -875,7 +848,7 @@ class GodRaysVeil(VeilBase):
         painter.fillRect(full_rect, base)
 
         painter.save()
-        painter.setRenderHint(QPainter.Antialiasing, False)  # Disable for perf
+        painter.setRenderHint(QPainter.Antialiasing, False)
         painter.setCompositionMode(QPainter.CompositionMode_Plus)
 
         ray_color = QColor(color) if color != "#000000" else QColor(255, 240, 200)
@@ -884,7 +857,7 @@ class GodRaysVeil(VeilBase):
         start_x_max = w * 0.65
         bottom_y = h + 50
 
-        for i in range(4):  # Reduced from 5 rays
+        for i in range(4):
             origin_x = start_x_min + (i * (start_x_max - start_x_min) / 3.0)
             origin_x += math.sin(self._t * 0.4 + i * 1.1) * (w * 0.03)
             
@@ -920,14 +893,14 @@ class CellsVeil(VeilBase):
     def __init__(self):
         super().__init__()
         self._timer = QTimer()
-        self._timer.setInterval(40)  # Increased from 33
+        self._timer.setInterval(40)
         self._timer.timeout.connect(self._tick)
         self._boids = []
 
     def _tick(self):
         if not self._boids and self._parent:
             w, h = self._parent.width(), self._parent.height()
-            for _ in range(40):  # Reduced from 55
+            for _ in range(40):
                 angle = random.uniform(0, TWO_PI)
                 speed = random.uniform(2.0, 4.5)
                 self._boids.append([
@@ -1010,6 +983,7 @@ class CellsVeil(VeilBase):
         painter.restore()
         _clear_holes(painter, selection_rects, selection_shape)
         
+
 # ── 16. Fireworks ────────────────────────────────────────────
         
 class Particle:
@@ -1020,14 +994,12 @@ class Particle:
         self.color = color
         self.burst_type = burst_type
         
-        # Physics base defaults
         self.size = random.uniform(0.5, 2.0)
         self.decay_rate = random.uniform(0.003, 0.01)
         self.gravity = random.uniform(0.01, 0.03)
         self.vx = random.uniform(-1.5, 1.5)
         self.vy = random.uniform(-1.5, 1.5)
 
-        # Apply Burst Styles
         if burst_type == "willow": 
             self.vy = random.uniform(-0.5, 0.5)
             self.gravity = 0.02
@@ -1073,7 +1045,6 @@ class FireworkVeil(VeilBase):
         for p in self.particles:
             p.update()
             
-        # O(N) list comprehension instead of O(N^2) list.remove()
         self.particles = [p for p in self.particles if p.life > 0]
         
         if self._parent:
@@ -1093,14 +1064,13 @@ class FireworkVeil(VeilBase):
             self.particles.append(Particle(x, y, c2, b_type))
 
     def on_show(self):
-        self.timer.start(45)  # Increased from 30
+        self.timer.start(45)
 
     def on_hide(self):
         self.timer.stop()
         self.particles.clear()
 
     def paint(self, painter, full_rect, selection_rects, opacity, color_hex, selection_shape="rectangle"):
-        # Explicitly disable AA to save rendering cycles on tiny particles
         painter.setRenderHint(QPainter.Antialiasing, False)
         
         bg_color = QColor(0, 0, 0, int(opacity * 255))
@@ -1109,7 +1079,6 @@ class FireworkVeil(VeilBase):
         for p in self.particles:
             alpha = int(p.life * 255 * opacity)
             
-            # Replaced drawEllipse with fillRect (massive GPU savings)
             glow_color = QColor(p.color)
             glow_color.setAlpha(int(alpha * 0.2))
             painter.fillRect(int(p.x - p.size), int(p.y - p.size), int(p.size * 3), int(p.size * 3), glow_color)
@@ -1120,7 +1089,203 @@ class FireworkVeil(VeilBase):
             
         _clear_holes(painter, selection_rects, selection_shape)
 
-# ── 17 & 18. GIF-backed veils ────────────────────────────────────────────
+
+# ── 17. Bouncing Cubes ────────────────────────────────────────────────────
+
+class BouncingCubeVeil(VeilBase):
+    def __init__(self):
+        super().__init__()
+        self._initialized = False
+        self.screen_rects = []
+        self.radius = 168.75
+        self.dx = int(self.radius * 0.866)
+        self.dy = int(self.radius * 0.5)
+        self.poly_offsets = [
+            [QPointF(0, 0), QPointF(-self.dx, -self.dy), QPointF(0, -int(self.radius)), QPointF(self.dx, -self.dy)],
+            [QPointF(0, 0), QPointF(-self.dx, -self.dy), QPointF(-self.dx, self.dy), QPointF(0, int(self.radius))],
+            [QPointF(0, 0), QPointF(self.dx, -self.dy), QPointF(self.dx, self.dy), QPointF(0, int(self.radius))]
+        ]
+        self.all_colors = [
+            QColor(255, 87, 34), QColor(33, 150, 243), QColor(76, 175, 80),
+            QColor(255, 193, 7), QColor(156, 39, 176), QColor(0, 188, 212)
+        ]
+        self.cubes = []
+        for _ in range(2):
+            self.cubes.append({
+                'cx': 0, 'cy': 0,
+                'vx': random.choice([-3.2, -2.4, 2.4, 3.2]),
+                'vy': random.choice([-3.2, -2.4, 2.4, 3.2]),
+                'faces': random.sample(self.all_colors, 3)
+            })
+        self._timer = QTimer()
+        self._timer.setInterval(32)
+        self._timer.timeout.connect(self._tick)
+
+    def _refresh_layout(self):
+        self.screen_rects = []
+        if self._parent and QApplication.instance():
+            offset = self._parent.geometry().topLeft()
+            for screen in QApplication.screens():
+                self.screen_rects.append(screen.geometry().translated(-offset))
+        if not self.screen_rects:
+            self.screen_rects = [QRect(0, 0, 1920, 1080)]
+            
+        if not self._initialized:
+            for i, c in enumerate(self.cubes):
+                r = self.screen_rects[i % len(self.screen_rects)]
+                c['cx'] = random.randint(int(r.left() + self.dx + 20), int(r.right() - self.dx - 20))
+                c['cy'] = random.randint(int(r.top() + self.radius + 20), int(r.bottom() - self.radius - 20))
+            self._initialized = True
+
+    def _tick(self):
+        for c in self.cubes:
+            c['cx'] += c['vx']
+            c['cy'] += c['vy']
+            
+            rects_at_y = [r for r in self.screen_rects if r.top() <= c['cy'] <= r.bottom()]
+            min_x = min((r.left() for r in rects_at_y)) if rects_at_y else 0
+            max_x = max((r.right() for r in rects_at_y)) if rects_at_y else 1920
+            
+            rects_at_x = [r for r in self.screen_rects if r.left() <= c['cx'] <= r.right()]
+            min_y = min((r.top() for r in rects_at_x)) if rects_at_x else 0
+            max_y = max((r.bottom() for r in rects_at_x)) if rects_at_x else 1080
+            
+            hit = False
+            if c['cx'] - self.dx <= min_x:
+                c['cx'] = min_x + self.dx
+                c['vx'] = abs(c['vx'])
+                hit = True
+            elif c['cx'] + self.dx >= max_x:
+                c['cx'] = max_x - self.dx
+                c['vx'] = -abs(c['vx'])
+                hit = True
+                
+            if c['cy'] - self.radius <= min_y:
+                c['cy'] = min_y + self.radius
+                c['vy'] = abs(c['vy'])
+                hit = True
+            elif c['cy'] + self.radius >= max_y:
+                c['cy'] = max_y - self.radius
+                c['vy'] = -abs(c['vy'])
+                hit = True
+                
+            if hit:
+                c['faces'] = random.sample(self.all_colors, 3)
+
+        for i in range(len(self.cubes)):
+            for j in range(i + 1, len(self.cubes)):
+                c1, c2 = self.cubes[i], self.cubes[j]
+                dx, dy = c2['cx'] - c1['cx'], c2['cy'] - c1['cy']
+                dist = math.hypot(dx, dy)
+                if 0 < dist < self.radius * 1.7:
+                    nx, ny = dx / dist, dy / dist
+                    p = (c1['vx'] - c2['vx']) * nx + (c1['vy'] - c2['vy']) * ny
+                    if p > 0:
+                        c1['vx'] -= p * nx
+                        c1['vy'] -= p * ny
+                        c2['vx'] += p * nx
+                        c2['vy'] += p * ny
+                        c1['faces'] = random.sample(self.all_colors, 3)
+                        c2['faces'] = random.sample(self.all_colors, 3)
+                        
+        if self._parent:
+            self._parent.update()
+
+    def on_show(self):
+        self._refresh_layout()
+        self._timer.start()
+
+    def on_hide(self):
+        self._timer.stop()
+
+    def paint(self, painter, full_rect, selection_rects, opacity, color, selection_shape='rectangle'):
+        c_bg = QColor(color)
+        c_bg.setAlpha(int(opacity * 255))
+        painter.fillRect(full_rect, c_bg)
+        painter.setRenderHint(QPainter.Antialiasing, False)
+        painter.setPen(Qt.NoPen)
+        
+        for c in self.cubes:
+            cx, cy = int(c['cx']), int(c['cy'])
+            for i in range(3):
+                poly = QPolygonF([QPointF(cx + p.x(), cy + p.y()) for p in self.poly_offsets[i]])
+                c_face = QColor(c['faces'][i])
+                c_face.setAlpha(int(opacity * 255))
+                painter.setBrush(c_face)
+                painter.drawPolygon(poly)
+                
+        painter.setBrush(Qt.NoBrush)
+        c_outline = QColor(255, 255, 255, int(80 * opacity))
+        painter.setPen(QPen(c_outline, 2))
+        
+        for c in self.cubes:
+            cx, cy = int(c['cx']), int(c['cy'])
+            for i in range(3):
+                poly = QPolygonF([QPointF(cx + p.x(), cy + p.y()) for p in self.poly_offsets[i]])
+                painter.drawPolygon(poly)
+                
+        _clear_holes(painter, selection_rects, selection_shape)
+
+
+# ── 18. Concentric Waves / Ripples ───────────────────────────────────────
+
+class ConcentricWavesVeil(VeilBase):
+    def __init__(self):
+        super().__init__()
+        self.waves = []
+        self.max_radius = 2500
+        self.tick_count = 0
+        self._timer = QTimer()
+        self._timer.setInterval(32)
+        self._timer.timeout.connect(self._tick)
+
+    def _tick(self):
+        self.tick_count += 1
+        if self.tick_count % 45 == 0:
+            self.waves.append({'radius': 0.0})
+        for wave in self.waves:
+            wave['radius'] += 3.0
+        self.waves = [w for w in self.waves if w['radius'] < self.max_radius]
+        if self._parent:
+            self._parent.update()
+
+    def on_show(self):
+        self.waves = []
+        self.tick_count = 0
+        self._timer.start()
+
+    def on_hide(self):
+        self._timer.stop()
+
+    def paint(self, painter, full_rect, selection_rects, opacity, color, selection_shape='rectangle'):
+        c_bg = QColor(color)
+        c_bg.setAlpha(int(opacity * 255))
+        painter.fillRect(full_rect, c_bg)
+        painter.save()
+        painter.setRenderHint(QPainter.Antialiasing, True)
+        
+        base_color = QColor(color)
+        wave_color = base_color.darker(150)
+        start_thickness = 40.0
+        end_thickness = 0.1
+        
+        for wave in self.waves:
+            progress = wave['radius'] / self.max_radius
+            current_width = start_thickness - progress * (start_thickness - end_thickness)
+            current_opacity = opacity * (1.0 - progress)
+            
+            pen = QPen(wave_color, max(1.0, current_width))
+            wave_color.setAlpha(int(255 * current_opacity))
+            pen.setColor(wave_color)
+            painter.setPen(pen)
+            painter.setBrush(Qt.NoBrush)
+            painter.drawEllipse(full_rect.center(), int(wave['radius']), int(wave['radius']))
+            
+        painter.restore()
+        _clear_holes(painter, selection_rects, selection_shape)
+
+
+# ── 19. GIF-backed Veils ──────────────────────────────────────────────────
 
 class GifVeil(VeilBase):
     _LARGE_PX = 257
@@ -1170,7 +1335,6 @@ class GifVeil(VeilBase):
         if raw.isNull():
             return
 
-        # Use cacheKey() to accurately detect frame changes instead of object identity
         current_cache_key = raw.cacheKey()
         
         if current_cache_key != self._last_cache_key or full_rect != self._last_rect:
@@ -1180,7 +1344,7 @@ class GifVeil(VeilBase):
                 self._last_scaled = raw.scaled(
                     full_rect.size(),
                     Qt.KeepAspectRatioByExpanding,
-                    Qt.FastTransformation  # Replaced SmoothTransformation for massive CPU gain
+                    Qt.FastTransformation
                 )
             else:
                 self._last_scaled = None
@@ -1200,47 +1364,51 @@ class GifVeil(VeilBase):
 # ── Registry / factory ──────────────────────────────────────────────────────
 
 VEIL_LABELS = [
-    ("flat", "Flat Color"),
-    ("color", "Ambient Color"),
-    ("darkcolor", "Dark Ambient"),
-    ("wave", "Wave"),
-    ("waves", "Waves"),
-    ("waves2", "Waves 2"),
-    ("linewaves", "Line Waves"),
-    ("starfield", "Cosmic Starfield"),
-    ("constellation", "Constellation"),
-    ("cyber", "Cyber Rain"),
-    ("matrix", "Matrix Rain"),
-    ("crt", "Retro CRT"),
-    ("vhs", "VHS Glitch"),
-    ("radar", "Radar Sweep"),
-    ("godrays", "God Rays"),
-    ("flock", "Cells"),
-    ("fireworks", "Fireworks"),
-    ("jellyfish", "Jellyfish"),
-    ("chicks", "Chicks"),
+    ('flat', 'Flat Color'),
+    ('color', 'Ambient Color'),
+    ('darkcolor', 'Dark Ambient'),
+    ('wave', 'Wave'),
+    ('waves', 'Waves'),
+    ('waves2', 'Waves 2'),
+    ('linewaves', 'Line Waves'),
+    ('starfield', 'Cosmic Starfield'),
+    ('constellation', 'Constellation'),
+    ('cyber', 'Cyber Rain'),
+    ('matrix', 'Matrix Rain'),
+    ('crt', 'Retro CRT'),
+    ('vhs', 'VHS Glitch'),
+    ('radar', 'Radar Sweep'),
+    ('godrays', 'God Rays'),
+    ('flock', 'Cells'),
+    ('fireworks', 'Fireworks'),
+    ('bouncingcube', 'Bouncing Cubes'),
+    ('concentricwaves', 'Ripples'),
+    ('jellyfish', 'Jellyfish'),
+    ('chicks', 'Chicks')
 ]
 
 _REGISTRY = {
-    "flat":      lambda: FlatColorVeil(),
-    "color":     lambda: AmbientColorVeil(),
-    "darkcolor": lambda: DarkAmbientColorVeil(),
-    "wave":      lambda: ShaderWavesVeil(), # GPU version
-    "waves":     lambda: WavesVeil(),       # CPU version
-    "waves2":    lambda: Waves2Veil(),
-    "linewaves": lambda: LineWavesVeil(),
-    "starfield": lambda: StarfieldVeil(),
-    "constellation": lambda: ConstellationVeil(),
-    "cyber": lambda: CyberRainVeil(),
-    "matrix": lambda: MatrixRainVeil(),
-    "crt": lambda: RetroCrtVeil(),
-    "vhs": lambda: VhsGlitchVeil(),
-    "radar": lambda: RadarVeil(),
-    "godrays": lambda: GodRaysVeil(),
-    "flock": lambda: CellsVeil(),
-    "fireworks": lambda: FireworkVeil(),
-    "jellyfish": lambda: GifVeil("jellyfish.gif"),
-    "chicks": lambda: GifVeil("chicks.gif"),
+    'flat': lambda: FlatColorVeil(),
+    'color': lambda: AmbientColorVeil(),
+    'darkcolor': lambda: DarkAmbientColorVeil(),
+    'wave': lambda: WavesVeil(),
+    'waves': lambda: WavesVeil(),
+    'waves2': lambda: Waves2Veil(),
+    'linewaves': lambda: LineWavesVeil(),
+    'starfield': lambda: StarfieldVeil(),
+    'constellation': lambda: ConstellationVeil(),
+    'cyber': lambda: CyberRainVeil(),
+    'matrix': lambda: MatrixRainVeil(),
+    'crt': lambda: RetroCrtVeil(),
+    'vhs': lambda: VhsGlitchVeil(),
+    'radar': lambda: RadarVeil(),
+    'godrays': lambda: GodRaysVeil(),
+    'flock': lambda: CellsVeil(),
+    'fireworks': lambda: FireworkVeil(),
+    'bouncingcube': lambda: BouncingCubeVeil(),
+    'concentricwaves': lambda: ConcentricWavesVeil(),
+    'jellyfish': lambda: GifVeil('jellyfish.gif'),
+    'chicks': lambda: GifVeil('chicks.gif')
 }
 
 def get_veil(key: str) -> VeilBase:

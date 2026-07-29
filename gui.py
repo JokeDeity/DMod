@@ -4,6 +4,9 @@ Forced to use Fusion style to completely isolate styling from Windows system the
 """
 
 import winutils
+import subprocess
+import sys
+import os
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QDialog, QVBoxLayout, QHBoxLayout, QGridLayout,
     QLabel, QPushButton, QComboBox, QSlider, QSpinBox, QColorDialog, QCheckBox, QFrame
@@ -53,7 +56,7 @@ QLabel#mutedText {
 QLabel#hotkeyText {
     color: #4d8df0;
     font-family: monospace;
-    font-size: 14px;
+    font-size: 13px;
     font-weight: bold;
     background-color: transparent;
 }
@@ -100,6 +103,13 @@ QPushButton:hover {
 QPushButton:pressed {
     background-color: #121318;
     border-color: #366ac7;
+}
+
+/* Compact Action Buttons for Grid Rows */
+QPushButton#smBtn {
+    padding: 5px 10px;
+    font-size: 11px;
+    min-width: 48px;
 }
 
 /* Clear, High-Contrast Action Button for Admin Escalation */
@@ -192,7 +202,7 @@ class HotkeyCaptureDialog(QDialog):
     def __init__(self, parent=None, current=""):
         super().__init__(parent)
         self.setWindowTitle("Set Hotkey")
-        self.setFixedSize(420, 230)
+        self.setFixedSize(420, 240)
         self.setModal(True)
         self.setStyleSheet(STYLE_SHEET)
 
@@ -217,9 +227,18 @@ class HotkeyCaptureDialog(QDialog):
         self.preview.setStyleSheet("font-size: 22px; font-weight: bold; color: #ffffff; background: #1a1c23; border: 1px solid #4d8df0; border-radius: 8px; padding: 12px;")
         layout.addWidget(self.preview)
 
+        btn_layout = QHBoxLayout()
+        btn_layout.setSpacing(10)
+        
+        clear_btn = QPushButton("Clear / Disable")
+        clear_btn.clicked.connect(self._on_clear)
+        
         cancel_btn = QPushButton("Cancel")
         cancel_btn.clicked.connect(self.reject)
-        layout.addWidget(cancel_btn)
+        
+        btn_layout.addWidget(clear_btn)
+        btn_layout.addWidget(cancel_btn)
+        layout.addLayout(btn_layout)
 
     def showEvent(self, event):
         super().showEvent(event)
@@ -228,6 +247,11 @@ class HotkeyCaptureDialog(QDialog):
     def reject(self):
         self._stop_listener()
         super().reject()
+
+    def _on_clear(self):
+        self._stop_listener()
+        self.result_hotkey = "NONE"
+        self.accept()
 
     def _start_listener(self):
         self._held_modifiers = []
@@ -277,7 +301,6 @@ class HotkeyCaptureDialog(QDialog):
 
 class SettingsWindow(QWidget):
     def __init__(self, controller):
-        # Explicitly force Fusion style to bypass Windows theme engine contamination
         if QApplication.instance():
             QApplication.instance().setStyle('Fusion')
             
@@ -287,23 +310,23 @@ class SettingsWindow(QWidget):
         self.hotkey_mgr = controller.hotkey_mgr
 
         self.setWindowTitle("DMod Settings")
-        self.setFixedSize(1280, 500) # Ample scale prevents text cutoff across monitors
+        self.setFixedSize(1400, 520)
         self.setStyleSheet(STYLE_SHEET)
 
         main_layout = QHBoxLayout(self)
         main_layout.setContentsMargins(20, 20, 20, 20)
-        main_layout.setSpacing(20)
+        main_layout.setSpacing(16)
 
-        main_layout.addWidget(self._build_col_hotkeys(), 1)
-        main_layout.addWidget(self._build_col_veil(), 1)
-        main_layout.addWidget(self._build_col_audio(), 1)
-        main_layout.addWidget(self._build_col_system(), 1)
+        main_layout.addWidget(self._build_col_hotkeys(), 12)
+        main_layout.addWidget(self._build_col_veil(), 10)
+        main_layout.addWidget(self._build_col_audio(), 9)
+        main_layout.addWidget(self._build_col_system(), 10)
 
     def _build_col_hotkeys(self):
         card = QFrame()
         card.setObjectName("card")
         layout = QVBoxLayout(card)
-        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setContentsMargins(18, 18, 18, 18)
 
         header = QLabel("Keybinds")
         header.setObjectName("header")
@@ -311,19 +334,24 @@ class SettingsWindow(QWidget):
         layout.addSpacing(10)
 
         grid = QGridLayout()
-        grid.setVerticalSpacing(20)
-        grid.setHorizontalSpacing(15)
+        grid.setVerticalSpacing(16)
+        grid.setHorizontalSpacing(12)
+
+        grid.setColumnStretch(0, 1)
+        grid.setColumnStretch(1, 0)
 
         self.main_hotkey_label = QLabel(self.hotkey_mgr.primary_str.upper())
         self.pause_hotkey_label = QLabel(self.hotkey_mgr.secondary_str.upper())
         self.cursorlock_hotkey_label = QLabel(self.hotkey_mgr.cursorlock_str.upper())
         self.aot_hotkey_label = QLabel(self.hotkey_mgr.aot_str.upper())
+        self.network_hotkey_label = QLabel(self.hotkey_mgr.network_str.upper())
 
         rows = [
-            ("Veil", "Hold to select veil.\nOr press once for fullscreen.\nPress again to clear.", self.main_hotkey_label, self.hotkey_mgr.set_primary_hotkey),
-            ("Pause", "Pauses and restores veil.", self.pause_hotkey_label, self.hotkey_mgr.set_secondary_hotkey),
-            ("Cursor Lock", "Toggles locking the cursor \nto the active window.", self.cursorlock_hotkey_label, self.hotkey_mgr.set_cursorlock_hotkey),
-            ("Always On Top", "Toggles forcing the active\nwindow to always on top.", self.aot_hotkey_label, self.hotkey_mgr.set_aot_hotkey),
+            ("Veil", "Hold to select veil in manual mode, or press once for fullscreen. Press again to clear.", self.main_hotkey_label, self.hotkey_mgr.set_primary_hotkey),
+            ("Pause", "Pauses and restores the veil.", self.pause_hotkey_label, self.hotkey_mgr.set_secondary_hotkey),
+            ("Cursor Lock", "Toggles locking the cursor to the active window.", self.cursorlock_hotkey_label, self.hotkey_mgr.set_cursorlock_hotkey),
+            ("Always On Top", "Toggles forcing the active window to be always on top.", self.aot_hotkey_label, self.hotkey_mgr.set_aot_hotkey),
+            ("Toggle Network", "Toggles the network on and off.", self.network_hotkey_label, self.hotkey_mgr.set_network_hotkey),
         ]
 
         for i, (name, subtitle, value_label, setter) in enumerate(rows):
@@ -333,18 +361,34 @@ class SettingsWindow(QWidget):
             name_lbl.setStyleSheet("font-weight: bold;")
             sub_lbl = QLabel(subtitle)
             sub_lbl.setObjectName("mutedText")
+            sub_lbl.setWordWrap(True)
             lbl_layout.addWidget(name_lbl)
             lbl_layout.addWidget(sub_lbl)
             grid.addLayout(lbl_layout, i, 0)
 
+            right_box = QVBoxLayout()
+            right_box.setSpacing(4)
+
             value_label.setObjectName("hotkeyText")
             value_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-            grid.addWidget(value_label, i, 1)
+            right_box.addWidget(value_label)
 
-            btn = QPushButton("Rebind")
-            btn.setFixedWidth(85)
-            btn.clicked.connect(lambda _, lbl=value_label, fn=setter: self._capture_and_apply(lbl, fn))
-            grid.addWidget(btn, i, 2)
+            btn_box = QHBoxLayout()
+            btn_box.setSpacing(4)
+            
+            rebind_btn = QPushButton("Rebind")
+            rebind_btn.setObjectName("smBtn")
+            rebind_btn.clicked.connect(lambda _, lbl=value_label, fn=setter: self._capture_and_apply(lbl, fn))
+            
+            clear_btn = QPushButton("Clear")
+            clear_btn.setObjectName("smBtn")
+            clear_btn.clicked.connect(lambda _, lbl=value_label, fn=setter: self._clear_hotkey(lbl, fn))
+
+            btn_box.addWidget(rebind_btn)
+            btn_box.addWidget(clear_btn)
+            right_box.addLayout(btn_box)
+
+            grid.addLayout(right_box, i, 1)
 
         layout.addLayout(grid)
         layout.addStretch()
@@ -358,19 +402,22 @@ class SettingsWindow(QWidget):
             setter(upper_hotkey)
             label.setText(upper_hotkey)
         self.hotkey_mgr.resume()
+
+    def _clear_hotkey(self, label, setter):
+        setter("NONE")
+        label.setText("NONE")
         
     def _build_col_veil(self):
         card = QFrame()
         card.setObjectName("card")
         layout = QVBoxLayout(card)
-        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setContentsMargins(18, 18, 18, 18)
 
         header = QLabel("Veil Appearance")
         header.setObjectName("header")
         layout.addWidget(header)
         layout.addSpacing(6)
 
-# ── Veil Mode (top-level behaviour switch) ────────────────────────
         mode_row = QHBoxLayout()
         mode_row.addWidget(QLabel("Veil Mode:"))
         self.veil_mode_combo = QComboBox()
@@ -396,7 +443,6 @@ class SettingsWindow(QWidget):
         grid.setVerticalSpacing(15)
         grid.setHorizontalSpacing(10)
 
-        # Dropdowns
         grid.addWidget(QLabel("Veil Style:"), 0, 0)
         self.veil_combo = QComboBox()
         for key, label in VEIL_LABELS:
@@ -415,7 +461,6 @@ class SettingsWindow(QWidget):
         self.shape_combo.currentIndexChanged.connect(self._on_selection_shape_changed)
         grid.addWidget(self.shape_combo, 1, 1)
 
-        # Base Tint & Swatch
         color_label_layout = QVBoxLayout()
         color_label_layout.setContentsMargins(0, 0, 0, 0)
         color_label_layout.addWidget(QLabel("Base Color:"))
@@ -443,7 +488,6 @@ class SettingsWindow(QWidget):
         
         grid.addLayout(swatch_layout, 2, 1, Qt.AlignTop)
 
-        # Opacity
         grid.addWidget(QLabel("Opacity:"), 3, 0)
         op_row = QHBoxLayout()
         self.opacity_slider = QSlider(Qt.Horizontal)
@@ -456,10 +500,6 @@ class SettingsWindow(QWidget):
         op_row.addWidget(self.opacity_value_label)
         grid.addLayout(op_row, 3, 1)
 
-        layout.addLayout(grid)
-        layout.addStretch()
-        
-        # Fade Durations (Added)
         grid.addWidget(QLabel("Fade Speed (ms):"), 4, 0)
         self.fade_spin = QSpinBox()
         self.fade_spin.setRange(10, 50000)
@@ -473,6 +513,9 @@ class SettingsWindow(QWidget):
         self.pause_fade_spin.setValue(self.overlay.fade_duration_pause)
         self.pause_fade_spin.valueChanged.connect(self._on_pause_fade_changed)
         grid.addWidget(self.pause_fade_spin, 5, 1)
+
+        layout.addLayout(grid)
+        layout.addStretch()
         return card        
 
     def _on_veil_type_changed(self, index):
@@ -510,17 +553,17 @@ class SettingsWindow(QWidget):
         self.overlay.fade_duration_pause = value
         self.overlay.settings.setValue("delay_pause", value)
 
+# ── Audio Column ────────────────────────
     def _build_col_audio(self):
         card = QFrame()
         card.setObjectName("card")
         layout = QVBoxLayout(card)
-        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setContentsMargins(18, 18, 18, 18)
 
         header = QLabel("Sound Effects")
         header.setObjectName("header")
         layout.addWidget(header)
         layout.addStretch()
-        
         
         sounds = [("Activate.ogg", "Activate"),  ("Fade.ogg", "Fade"),
                   ("Clear.ogg", "Clear"), ("Pause.ogg", "Pause"),
@@ -539,24 +582,39 @@ class SettingsWindow(QWidget):
             chk.stateChanged.connect(create_callback(filename))
             layout.addWidget(chk)
             
-            # Apply 11px spacing after each checkbox except the last
             if i < len(sounds) - 1:
                 layout.addStretch()
             
         return card
 
+# ── System Column ────────────────────────
+    def _launch_blueaway(self):
+        from PyQt5.QtWidgets import QMessageBox
+        try:
+            if getattr(sys, 'frozen', False):
+                base_dir = getattr(sys, '_MEIPASS', os.path.dirname(sys.executable))
+            else:
+                base_dir = os.path.dirname(os.path.abspath(__file__))
+            
+            script_path = os.path.join(base_dir, 'BlueAway.ps1')
+            if not os.path.exists(script_path):
+                QMessageBox.warning(self, 'File Not Found', f'Could not find BlueAway.ps1 at:\n{script_path}')
+            else:
+                subprocess.Popen(['powershell.exe', '-ExecutionPolicy', 'Bypass', '-File', script_path])
+        except Exception as e:
+            QMessageBox.critical(self, 'Launch Error', f'Failed to launch BlueAway:\n{str(e)}')
+            
     def _build_col_system(self):
         card = QFrame()
         card.setObjectName("card")
         layout = QVBoxLayout(card)
-        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setContentsMargins(18, 18, 18, 18)
 
         header = QLabel("System Utilities")
         header.setObjectName("header")
         layout.addWidget(header)
         layout.addStretch()
 
-        # Precise text-wrapping layout for utility toggles
         self.desktop_icons_chk = QCheckBox("Toggle Desktop Icons on Double-Click")
         self.desktop_icons_chk.setChecked(self.controller.settings.value("desktop_icon_toggle", False, type=bool))
         self.desktop_icons_chk.stateChanged.connect(lambda state: self.controller.set_desktop_icon_toggle(bool(state)))
@@ -577,19 +635,21 @@ class SettingsWindow(QWidget):
         layout.addWidget(self.wrap_chk)
         
         layout.addSpacing(11)
-        
-        # Startup toggle
+
         self.startup_chk = QCheckBox("Run at Windows Startup")
         self.startup_chk.setChecked(winutils.is_autostart_enabled())
         self.startup_chk.stateChanged.connect(lambda state: winutils.set_autostart(bool(state)))
         layout.addWidget(self.startup_chk)
         
+        layout.addSpacing(11)
+
+        self.blueaway_btn = QPushButton("Launch Bluetooth Device Remover")
+        self.blueaway_btn.clicked.connect(self._launch_blueaway)
+        layout.addWidget(self.blueaway_btn)
+
         layout.addStretch()
 
-# ── Screensaver ───────────────────────────────────────────────────
-        # The ONE master box enclosing the entire screensaver section
         ss_frame = QFrame()
-        # Added 'QFrame' selector so these styles ONLY apply to the container, not the inputs inside it
         ss_frame.setStyleSheet("QFrame { background-color: #1E202A; border-radius: 6px; border: 1px solid #2a2c36; }")
         ss_layout = QVBoxLayout(ss_frame)
         ss_layout.setContentsMargins(12, 12, 12, 12)
@@ -603,7 +663,6 @@ class SettingsWindow(QWidget):
         self.ss_chk.setStyleSheet("background: transparent; border: none;")
         ss_layout.addWidget(self.ss_chk)
 
-        # Time entry row
         ss_time_row = QHBoxLayout()
         ss_time_row.setSpacing(8)
         
@@ -616,13 +675,12 @@ class SettingsWindow(QWidget):
         self.ss_spin.setSuffix(" min")
         self.ss_spin.setValue(self.controller.settings.value("screensaver_timeout_min", 5, type=int))
         self.ss_spin.valueChanged.connect(self.controller.screensaver_mgr.set_timeout_minutes)
-        # No inline styles here; it will now perfectly inherit the same look as Fade Speed
         ss_time_row.addWidget(self.ss_spin)
         ss_time_row.addStretch()
         
         ss_layout.addLayout(ss_time_row)
 
-        ss_note = QLabel("Activates the veil after idle. Any input dismisses it.")
+        ss_note = QLabel("Activate veil after idle, input dismisses.")
         ss_note.setObjectName("mutedText")
         ss_note.setWordWrap(True)
         ss_note.setStyleSheet("background: transparent; border: none;")
@@ -631,7 +689,6 @@ class SettingsWindow(QWidget):
         layout.addWidget(ss_frame)
         layout.addSpacing(8)
 
-        # Re-engineered Admin Callout
         admin_frame = QFrame()
         admin_frame.setStyleSheet("background-color: #1E202A; border-radius: 6px; border: 1px solid #2a2c36;")
         admin_layout = QVBoxLayout(admin_frame)
@@ -657,6 +714,7 @@ class SettingsWindow(QWidget):
             admin_layout.addWidget(btn)
 
         layout.addWidget(admin_frame)
+
         return card
 
     def _on_relaunch_admin(self):
