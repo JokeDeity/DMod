@@ -1,16 +1,20 @@
 
 <center>
 	DMod
-<img width="1280" height="527" alt="image" src="https://github.com/user-attachments/assets/e62179c9-b401-4c11-bd6b-7ec05bc7bf3d" />
+<img width="1400" height="547" alt="image" src="https://github.com/user-attachments/assets/5aabc6b6-0e11-4983-8cab-656869f00a05" />
 </center>
 
-NEW FEATURE:  Screensaver mode:  Now you can set a timer and after that much idle time it will automatically kick in a fullscreen veil, just need to move the mouse around or click to bring it back.
+NEW FEATURE:  Bluetooth device manager subprogram.  This launches a small separate utility that lets you remove stubborn bluetooth devices that Windows fails to remove on it's own, also makes a backup in case you remove something by accident.
 
-NEW FEATURE:  Veil Mode Auto-Dim:  This mode will automatically make whatever window is active be visible while everything else (with some exceptions and kinks) should be covered by the veil.
+NEW FEATURE:  Hotkey clear buttons:  Not sure if this should be called a feature and definitely should have been there from the start, but you can clear hotkeys you don't want to use now.
 
-New feature:  Double-click Hide Desktop Icons:  Double-click on your desktop to hide all the icons.
+New feature:  Screensaver mode:  Now you can set a timer and after that much idle time it will automatically kick in a fullscreen veil, just need to move the mouse around or click to bring it back.
 
-New feature:  Unsnag:  Unsnag your cursor from the corners on multiple monitor setups.
+New feature:  Veil Mode Auto-Dim:  This mode will automatically make whatever window is active be visible while everything else (with some exceptions and kinks) should be covered by the veil.
+
+*Double-click Hide Desktop Icons:  Double-click on your desktop to hide all the icons.
+
+*Unsnag:  Unsnag your cursor from the corners on multiple monitor setups.
 
 *Monitor Wrap:  Your cursor goes off the edge of one side and enters the other, again helpful for mulitple monitor setups.
 
