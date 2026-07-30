@@ -592,11 +592,21 @@ class SettingsWindow(QWidget):
         from PyQt5.QtWidgets import QMessageBox
         try:
             if getattr(sys, 'frozen', False):
-                base_dir = getattr(sys, '_MEIPASS', os.path.dirname(sys.executable))
+                # 1. Try bundled temp folder (_MEIPASS)
+                mei_dir = getattr(sys, '_MEIPASS', None)
+                if mei_dir:
+                    script_path = os.path.join(mei_dir, 'BlueAway.ps1')
+                else:
+                    script_path = None
+
+                # 2. Fall back to the executable directory if missing from _MEIPASS
+                if not script_path or not os.path.exists(script_path):
+                    exe_dir = os.path.dirname(sys.executable)
+                    script_path = os.path.join(exe_dir, 'BlueAway.ps1')
             else:
                 base_dir = os.path.dirname(os.path.abspath(__file__))
+                script_path = os.path.join(base_dir, 'BlueAway.ps1')
             
-            script_path = os.path.join(base_dir, 'BlueAway.ps1')
             if not os.path.exists(script_path):
                 QMessageBox.warning(self, 'File Not Found', f'Could not find BlueAway.ps1 at:\n{script_path}')
             else:

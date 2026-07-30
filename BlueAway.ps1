@@ -24,7 +24,7 @@ Add-Type -AssemblyName System.Drawing
 # --- Root Directory & Backup Setup ---
 # Determine root directory dynamically (where BlueAway.ps1 or DMod.exe resides)
 $RootDir = if ($PSScriptRoot) { $PSScriptRoot } else { (Get-Location).Path }
-$backupDir = Join-Path -Path $RootDir -ChildPath "BlueAway_Backups"
+$backupDir = Join-Path -Path $RootDir -ChildPath "BlueAwayBackups"
 
 if (-not (Test-Path -Path $backupDir)) {
     New-Item -ItemType Directory -Path $backupDir | Out-Null

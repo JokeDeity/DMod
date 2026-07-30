@@ -5,7 +5,7 @@ import ctypes
 import ctypes.wintypes
 import threading
 import subprocess
-from PyQt5.QtWidgets import QApplication, QWidget, QSystemTrayIcon, QMenu, QOpenGLWidget
+from PyQt5.QtWidgets import QApplication, QWidget, QSystemTrayIcon, QMenu
 from PyQt5.QtCore import Qt, QRect, QPropertyAnimation, pyqtProperty, pyqtSignal, QObject, QSettings, QEasingCurve, QTimer
 from PyQt5.QtGui import QPainter, QColor, QPen, QIcon, QPixmap, QSurfaceFormat
 from pynput import keyboard
@@ -200,7 +200,7 @@ class RAWINPUTDEVICE(ctypes.Structure):
     ]
 
 
-class TheaterOverlay(QOpenGLWidget):
+class TheaterOverlay(QWidget):
     def __init__(self):
         super().__init__()
         self.settings = QSettings("TheaterMode", "Settings")
@@ -227,6 +227,8 @@ class TheaterOverlay(QOpenGLWidget):
         self.auto_dim_manager = None
         self.anim = QPropertyAnimation(self, b"overlayOpacity")
         self.anim.setEasingCurve(QEasingCurve.InOutQuad)
+
+        self.update_geometry_for_all_screens()
 
     def nativeEvent(self, eventType, message):
         """Catches raw system input messages directly without hooks or timers."""
@@ -290,9 +292,16 @@ class TheaterOverlay(QOpenGLWidget):
     overlayOpacity = pyqtProperty(float, get_opacity, set_opacity)
 
     def update_geometry_for_all_screens(self):
-        rect = QRect()
-        for screen in QApplication.screens(): rect = rect.united(screen.geometry())
-        self.setGeometry(rect)
+        primary = QApplication.primaryScreen()
+        if primary:
+            self.setGeometry(primary.virtualGeometry())
+        else:
+            screens = QApplication.screens()
+            if screens:
+                rect = screens[0].geometry()
+                for screen in screens[1:]:
+                    rect = rect.united(screen.geometry())
+                self.setGeometry(rect)
 
     def _set_clickthrough(self, enabled):
         hwnd = int(self.winId())
@@ -438,7 +447,7 @@ class TheaterOverlay(QOpenGLWidget):
             self.update()
 
     def mouseMoveEvent(self, event):
-        if self.state == 'selecting' and self.start_pos:
+        if self.state == 'selecting' and getattr(self, 'start_pos', None):
             self.current_rect = QRect(self.start_pos, event.pos()).normalized()
             self.update()
 
@@ -603,6 +612,10 @@ class AppController(QObject):
         self.settings = QSettings("TheaterMode", "Settings")
         self.overlay = TheaterOverlay()
         self.overlay.controller = self
+
+        self.app.screenAdded.connect(lambda s: self.overlay.update_geometry_for_all_screens())
+        self.app.screenRemoved.connect(lambda s: self.overlay.update_geometry_for_all_screens())
+
         self.hotkey_mgr = HotkeyManager()
         self.cursor_locked = False
         
@@ -827,13 +840,6 @@ class AppController(QObject):
 
 
 if __name__ == '__main__':
-    format = QSurfaceFormat()
-    format.setDepthBufferSize(24)
-    format.setStencilBufferSize(8)
-    format.setVersion(2, 1)
-    format.setProfile(QSurfaceFormat.CompatibilityProfile)
-    QSurfaceFormat.setDefaultFormat(format)
-
     QApplication.setAttribute(Qt.AA_EnableHighDpiScaling, True)
     QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
     app = QApplication(sys.argv)
