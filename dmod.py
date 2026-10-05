@@ -5,6 +5,73 @@ import ctypes
 import ctypes.wintypes
 import threading
 import subprocess
+import importlib.util
+from importlib.abc import MetaPathFinder
+
+# ── Dynamic Global Import Hook (Only active when running from source) ─────
+if not getattr(sys, 'frozen', False):
+    class DynamicAutoInstaller(MetaPathFinder):
+        PACKAGE_MAPPINGS = {
+            'cv2': 'opencv-python',
+            'OpenGL': 'PyOpenGL',
+            'OpenGL_accelerate': 'PyOpenGL-accelerate',
+            'pygame': 'pygame-ce',
+            'PIL': 'pillow',
+            'fitz': 'PyMuPDF',
+            'yaml': 'pyyaml',
+            'bs4': 'beautifulsoup4',
+            'sklearn': 'scikit-learn'
+        }
+        
+        UNIX_ONLY_MODULES = {
+            'posix', 'pwd', 'grp', 'fcntl', 'resource', 'termios', 'syslog', '_singleprocess'
+        }
+
+        def __init__(self):
+            self._active_installs = set()
+
+        def find_spec(self, fullname, path, target=None):
+            top_level_module = fullname.split('.')[0]
+            
+            if (top_level_module in getattr(sys, 'stdlib_module_names', set()) or 
+                top_level_module in self.UNIX_ONLY_MODULES or 
+                top_level_module in self._active_installs or 
+                top_level_module in sys.modules):
+                return None
+
+            for finder in sys.meta_path:
+                if finder is self:
+                    continue
+                try:
+                    if finder.find_spec(top_level_module, None, target) is not None:
+                        return None
+                except Exception:
+                    pass
+
+            self._active_installs.add(top_level_module)
+            pip_package = self.PACKAGE_MAPPINGS.get(top_level_module, top_level_module)
+            
+            print(f"[AutoInstall] Missing module '{top_level_module}' detected via import hook. Installing '{pip_package}'...")
+            try:
+                subprocess.check_call([sys.executable, "-m", "pip", "install", pip_package])
+                importlib.invalidate_caches()
+                
+                for finder in sys.meta_path:
+                    if finder is self:
+                        continue
+                    spec = finder.find_spec(fullname, path, target)
+                    if spec is not None:
+                        self._active_installs.remove(top_level_module)
+                        return spec
+            except Exception as err:
+                print(f"[AutoInstall] Failed to automatically install '{pip_package}': {err}")
+                
+            self._active_installs.remove(top_level_module)
+            return None
+
+    sys.meta_path.append(DynamicAutoInstaller())
+# ──────────────────────────────────────────────────────────────────────────
+
 from PyQt5.QtWidgets import QApplication, QWidget, QSystemTrayIcon, QMenu
 from PyQt5.QtCore import Qt, QRect, QPropertyAnimation, pyqtProperty, pyqtSignal, QObject, QSettings, QEasingCurve, QTimer
 from PyQt5.QtGui import QPainter, QColor, QPen, QIcon, QPixmap, QSurfaceFormat
@@ -17,6 +84,7 @@ from gui import SettingsWindow
 from shapes import clear_selection_holes, draw_selection_outlines
 import winutils
 import mus
+from ambient import AmbientController
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 _cache = {}
@@ -44,8 +112,6 @@ def play_sound(filename: str):
             snd.play()
     except Exception:
         pass
-
-
 # ────────────────────────────────────────────────────────────────────────────
 
 class HotkeyManager(QObject):
@@ -55,6 +121,7 @@ class HotkeyManager(QObject):
     cursorlock_triggered = pyqtSignal()
     aot_triggered = pyqtSignal()
     network_triggered = pyqtSignal()
+    ambient_triggered = pyqtSignal()
 
     def __init__(self):
         super().__init__()
@@ -65,6 +132,7 @@ class HotkeyManager(QObject):
         self.cursorlock_str = self.settings.value("cursorlock_hotkey", "<f7>")
         self.aot_str = self.settings.value("aot_hotkey", "<f8>")
         self.network_str = self.settings.value("network_hotkey", "<f10>")
+        self.ambient_str = self.settings.value("ambient_hotkey", "<shift>+<f2>")
         
         self.primary_active = False
         self._held_keys = set()
@@ -74,7 +142,8 @@ class HotkeyManager(QObject):
         """Flushes stale orphan key states from pynput matchers after long idle times."""
         self._held_keys.clear()
         self.primary_active = False
-        for hk in (self.primary_hk, self.secondary_hk, self.cursorlock_hk, self.aot_hk, self.network_hk):
+        # Added self.ambient_hk to the state flush loop
+        for hk in (self.primary_hk, self.secondary_hk, self.cursorlock_hk, self.aot_hk, self.network_hk, self.ambient_hk):
             if hk and hasattr(hk, '_state'):
                 try:
                     hk._state.clear()
@@ -111,11 +180,15 @@ class HotkeyManager(QObject):
         def on_network_activate():
             self.network_triggered.emit()
 
+        def on_ambient_activate():
+            self.ambient_triggered.emit()
+
         self.primary_hk = keyboard.HotKey(keyboard.HotKey.parse(self.primary_str), on_primary_activate) if is_valid(self.primary_str) else None
         self.secondary_hk = keyboard.HotKey(keyboard.HotKey.parse(self.secondary_str), on_secondary_activate) if is_valid(self.secondary_str) else None
         self.cursorlock_hk = keyboard.HotKey(keyboard.HotKey.parse(self.cursorlock_str), on_cursorlock_activate) if is_valid(self.cursorlock_str) else None
         self.aot_hk = keyboard.HotKey(keyboard.HotKey.parse(self.aot_str), on_aot_activate) if is_valid(self.aot_str) else None
         self.network_hk = keyboard.HotKey(keyboard.HotKey.parse(self.network_str), on_network_activate) if is_valid(self.network_str) else None
+        self.ambient_hk = keyboard.HotKey(keyboard.HotKey.parse(self.ambient_str), on_ambient_activate) if is_valid(self.ambient_str) else None
 
         def on_press(key):
             try:
@@ -133,6 +206,7 @@ class HotkeyManager(QObject):
                 if self.cursorlock_hk: self.cursorlock_hk.press(canonical_key)
                 if self.aot_hk: self.aot_hk.press(canonical_key)
                 if self.network_hk: self.network_hk.press(canonical_key)
+                if self.ambient_hk: self.ambient_hk.press(canonical_key)
             except Exception:
                 pass
 
@@ -146,6 +220,7 @@ class HotkeyManager(QObject):
                 if self.cursorlock_hk: self.cursorlock_hk.release(canonical_key)
                 if self.aot_hk: self.aot_hk.release(canonical_key)
                 if self.network_hk: self.network_hk.release(canonical_key)
+                if self.ambient_hk: self.ambient_hk.release(canonical_key)
 
                 if self.primary_active:
                     if key in self.primary_keys or canonical_key in self.primary_keys:
@@ -188,6 +263,11 @@ class HotkeyManager(QObject):
     def set_network_hotkey(self, combo):
         self.network_str = combo
         self.settings.setValue("network_hotkey", combo)
+        self.start_listener()
+        
+    def set_ambient_hotkey(self, combo):
+        self.ambient_str = combo
+        self.settings.setValue("ambient_hotkey", combo)
         self.start_listener()
 
 
@@ -469,6 +549,9 @@ class TheaterOverlay(QWidget):
         painter.setRenderHint(QPainter.Antialiasing)
 
         if self.state == 'selecting':
+            # Fill screen with 1/255 alpha background to physically trap the mouse
+            painter.fillRect(self.rect(), QColor(0, 0, 0, 1))
+
             pen = QPen(QColor(255, 255, 255, 200), 2, Qt.DashLine)
             
             draw_selection_outlines(painter, self.selection_rects, self.selection_shape, pen)
@@ -628,6 +711,7 @@ class AppController(QObject):
         self.hotkey_mgr.cursorlock_triggered.connect(self.toggle_cursor_lock)
         self.hotkey_mgr.aot_triggered.connect(self.toggle_always_on_top)
         self.hotkey_mgr.network_triggered.connect(self.toggle_network)
+        self.hotkey_mgr.ambient_triggered.connect(self.toggle_ambient_lights)
 
         self.app.aboutToQuit.connect(winutils.release_cursor_lock)
         self.app.aboutToQuit.connect(self.hotkey_mgr.pause)
@@ -663,8 +747,20 @@ class AppController(QObject):
         self.screensaver_mgr    = ScreensaverManager(self.overlay, self.settings)
         self.overlay.auto_dim_manager = self.auto_dim_manager
 
+        self.ambient = AmbientController()
+        if self.settings.value("ambient_light_enabled", False, type=bool):
+            self.ambient.set_enabled(True)
+        self.app.aboutToQuit.connect(lambda: self.ambient.set_enabled(False))
+
         self.settings_window = SettingsWindow(self)
         self.setup_tray()
+        
+    def toggle_ambient_lights(self):
+        play_sound("Activate.ogg")
+        current_state = self.settings.value("ambient_light_enabled", False, type=bool)
+        new_state = not current_state
+        self.settings.setValue("ambient_light_enabled", new_state)
+        self.ambient.set_enabled(new_state)
 
     def set_desktop_icon_toggle(self, state: bool):
         self._desktop_icon_toggle_enabled = state
@@ -849,3 +945,13 @@ if __name__ == '__main__':
 
     controller = AppController(app)
     sys.exit(app.exec_())
+    
+# ── Taskbar Rounder ─────────────────────────────────────────────
+
+from taskbarz import TaskbarRounderBackend
+
+# Initialize and start the taskbar rounder backend thread
+taskbar_rounder_backend = TaskbarRounderBackend()
+taskbar_rounder_backend.start()
+
+# ────────────────────────────────────────────────────────────────

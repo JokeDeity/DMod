@@ -9,13 +9,16 @@ import sys
 import os
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QDialog, QVBoxLayout, QHBoxLayout, QGridLayout,
-    QLabel, QPushButton, QComboBox, QSlider, QSpinBox, QColorDialog, QCheckBox, QFrame
+    QLabel, QPushButton, QComboBox, QSlider, QSpinBox, QColorDialog, QCheckBox, QFrame,
+    QTabWidget, QScrollArea
 )
 from PyQt5.QtCore import Qt, pyqtSignal
 from pynput import keyboard
 
 from veil import VEIL_LABELS
 from shapes import SELECTION_SHAPE_LABELS
+from ambient import DisplayTabWidget, list_monitors as list_ambient_monitors
+from taskbarz import TaskbarRounderTab, taskbar_rounder_backend
 
 # ── Modern Dashboard CSS ───────────────────────────────────────────────────
 
@@ -183,6 +186,73 @@ QSlider::handle:horizontal {
 QSlider::handle:horizontal:hover {
     background: #ffffff;
 }
+
+/* Group boxes (used by the Ambient Light tab) -- styled like the
+   existing cards so a new section doesn't look bolted-on. */
+QGroupBox {
+    background-color: #1a1c23;
+    border: 1px solid #2a2c36;
+    border-radius: 5px;
+    margin-top: 14px;
+    padding: 10px 8px 8px 8px;
+    font-weight: bold;
+}
+QGroupBox::title {
+    subcontrol-origin: margin;
+    subcontrol-position: top left;
+    left: 10px;
+    padding: 0 6px;
+    color: #e2e4e9;
+    background-color: #1a1c23;
+}
+
+/* Tabs */
+QTabWidget::pane {
+    border: 1px solid #2a2c36;
+    border-radius: 5px;
+    background-color: #121318;
+    top: -1px;
+}
+QTabBar::tab {
+    background: #1a1c23;
+    border: 1px solid #2a2c36;
+    border-bottom: none;
+    padding: 7px 16px;
+    color: #8b92a5;
+    border-top-left-radius: 5px;
+    border-top-right-radius: 5px;
+}
+QTabBar::tab:selected {
+    background: #2a2c36;
+    color: #ffffff;
+    border-color: #4d8df0;
+}
+QTabBar::tab:hover {
+    color: #e2e4e9;
+}
+
+/* Scroll areas (the Ambient Light per-monitor pages scroll instead of
+   growing the fixed-size settings window) */
+QScrollArea {
+    background-color: transparent;
+    border: none;
+}
+QScrollBar:vertical {
+    background: #121318;
+    width: 10px;
+    margin: 0;
+}
+QScrollBar::handle:vertical {
+    background: #2a2c36;
+    border-radius: 5px;
+    min-height: 24px;
+}
+QScrollBar::handle:vertical:hover {
+    background: #4d8df0;
+}
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+    height: 0;
+}
 """
 
 # ── Hotkey Capture Dialog ───────────────────────────────────────────────────
@@ -313,14 +383,29 @@ class SettingsWindow(QWidget):
         self.setFixedSize(1400, 520)
         self.setStyleSheet(STYLE_SHEET)
 
-        main_layout = QHBoxLayout(self)
-        main_layout.setContentsMargins(20, 20, 20, 20)
+        outer_layout = QVBoxLayout(self)
+        outer_layout.setContentsMargins(20, 20, 20, 20)
+        outer_layout.setSpacing(16)
+
+        self.section_tabs = QTabWidget()
+        outer_layout.addWidget(self.section_tabs)
+
+        overlay_page = QWidget()
+        main_layout = QHBoxLayout(overlay_page)
+        main_layout.setContentsMargins(4, 4, 4, 4)
         main_layout.setSpacing(16)
 
         main_layout.addWidget(self._build_col_hotkeys(), 12)
         main_layout.addWidget(self._build_col_veil(), 10)
         main_layout.addWidget(self._build_col_audio(), 9)
         main_layout.addWidget(self._build_col_system(), 10)
+
+        self.section_tabs.addTab(overlay_page, "Overlay && Utilities")
+        self.section_tabs.addTab(self._build_ambient_tab(), "Ambient Light")
+        
+        # Initialize and add Taskbar Rounder Tab properly inside __init__
+        self.taskbar_tab = TaskbarRounderTab(taskbar_rounder_backend)
+        self.section_tabs.addTab(self.taskbar_tab, "Taskbar Mods")
 
     def _build_col_hotkeys(self):
         card = QFrame()
@@ -345,6 +430,7 @@ class SettingsWindow(QWidget):
         self.cursorlock_hotkey_label = QLabel(self.hotkey_mgr.cursorlock_str.upper())
         self.aot_hotkey_label = QLabel(self.hotkey_mgr.aot_str.upper())
         self.network_hotkey_label = QLabel(self.hotkey_mgr.network_str.upper())
+        self.ambient_hotkey_label = QLabel(getattr(self.hotkey_mgr, "ambient_str", "NONE").upper())
 
         rows = [
             ("Veil", "Hold to select veil in manual mode, or press once for fullscreen. Press again to clear.", self.main_hotkey_label, self.hotkey_mgr.set_primary_hotkey),
@@ -352,6 +438,7 @@ class SettingsWindow(QWidget):
             ("Cursor Lock", "Toggles locking the cursor to the active window.", self.cursorlock_hotkey_label, self.hotkey_mgr.set_cursorlock_hotkey),
             ("Always On Top", "Toggles forcing the active window to be always on top.", self.aot_hotkey_label, self.hotkey_mgr.set_aot_hotkey),
             ("Toggle Network", "Toggles the network on and off.", self.network_hotkey_label, self.hotkey_mgr.set_network_hotkey),
+            ("Ambient Lights", "Toggles ambient display lights on and off.", self.ambient_hotkey_label, getattr(self.hotkey_mgr, "set_ambient_hotkey", lambda val: None)),
         ]
 
         for i, (name, subtitle, value_label, setter) in enumerate(rows):
@@ -407,6 +494,7 @@ class SettingsWindow(QWidget):
         setter("NONE")
         label.setText("NONE")
         
+# ── Veil Column ────────────────────────
     def _build_col_veil(self):
         card = QFrame()
         card.setObjectName("card")
@@ -592,25 +680,28 @@ class SettingsWindow(QWidget):
         from PyQt5.QtWidgets import QMessageBox
         try:
             if getattr(sys, 'frozen', False):
-                # 1. Try bundled temp folder (_MEIPASS)
                 mei_dir = getattr(sys, '_MEIPASS', None)
                 if mei_dir:
-                    script_path = os.path.join(mei_dir, 'BlueAway.ps1')
+                    script_path = os.path.join(mei_dir, 'blueaway.py')
                 else:
                     script_path = None
 
-                # 2. Fall back to the executable directory if missing from _MEIPASS
                 if not script_path or not os.path.exists(script_path):
                     exe_dir = os.path.dirname(sys.executable)
-                    script_path = os.path.join(exe_dir, 'BlueAway.ps1')
+                    script_path = os.path.join(exe_dir, 'blueaway.py')
             else:
                 base_dir = os.path.dirname(os.path.abspath(__file__))
-                script_path = os.path.join(base_dir, 'BlueAway.ps1')
+                script_path = os.path.join(base_dir, 'blueaway.py')
             
             if not os.path.exists(script_path):
-                QMessageBox.warning(self, 'File Not Found', f'Could not find BlueAway.ps1 at:\n{script_path}')
+                QMessageBox.warning(self, 'File Not Found', f'Could not find blueaway.py at:\n{script_path}')
             else:
-                subprocess.Popen(['powershell.exe', '-ExecutionPolicy', 'Bypass', '-File', script_path])
+                python_exe = 'python'
+                creation_flags = 0x08000000 if os.name == 'nt' else 0
+                subprocess.Popen([
+                    'powershell.exe', '-NoProfile', '-Command',
+                    f"Start-Process '{python_exe}' -ArgumentList '\"{script_path}\"' -Verb RunAs"
+                ], creationflags=creation_flags)
         except Exception as e:
             QMessageBox.critical(self, 'Launch Error', f'Failed to launch BlueAway:\n{str(e)}')
             
@@ -730,6 +821,89 @@ class SettingsWindow(QWidget):
     def _on_relaunch_admin(self):
         winutils.relaunch_as_admin()
         QApplication.instance().quit()
+
+    # ── Ambient Light tab ──────────────────────────────────────────────
+    def _build_ambient_tab(self):
+        page = QWidget()
+        outer = QVBoxLayout(page)
+        outer.setContentsMargins(4, 4, 4, 4)
+        outer.setSpacing(10)
+
+        top_row = QHBoxLayout()
+        self.ambient_enable_chk = QCheckBox("Enable Ambient Light")
+        self.ambient_enable_chk.setChecked(self.controller.ambient.enabled)
+        self.ambient_enable_chk.toggled.connect(self._on_ambient_enable_toggled)
+        top_row.addWidget(self.ambient_enable_chk)
+        top_row.addStretch()
+
+        refresh_btn = QPushButton("Refresh Monitors")
+        refresh_btn.setObjectName("smBtn")
+        refresh_btn.clicked.connect(self._on_ambient_refresh)
+        top_row.addWidget(refresh_btn)
+
+        save_btn = QPushButton("Save")
+        save_btn.setObjectName("smBtn")
+        save_btn.clicked.connect(self._on_ambient_save)
+        top_row.addWidget(save_btn)
+
+        outer.addLayout(top_row)
+
+        self.ambient_status = QLabel(" ")
+        self.ambient_status.setObjectName("mutedText")
+        outer.addWidget(self.ambient_status)
+
+        self.ambient_tabs = QTabWidget()
+        outer.addWidget(self.ambient_tabs)
+        self._populate_ambient_tabs()
+
+        return page
+
+    def _populate_ambient_tabs(self):
+        self.ambient_tabs.clear()
+        ambient = self.controller.ambient
+
+        if ambient.manager is None:
+            placeholder = QLabel("Enable Ambient Light above to configure monitors.")
+            placeholder.setObjectName("mutedText")
+            placeholder.setAlignment(Qt.AlignCenter)
+            self.ambient_tabs.addTab(placeholder, "—")
+            return
+
+        monitors = list_ambient_monitors()
+        for m in monitors:
+            tab = DisplayTabWidget(m, monitors, ambient.settings, ambient.manager, self._on_ambient_tab_changed)
+            scroller = QScrollArea()
+            scroller.setWidgetResizable(True)
+            scroller.setFrameShape(QFrame.NoFrame)
+            scroller.setWidget(tab)
+            title = m.name + (" (Primary)" if m.is_primary else "")
+            self.ambient_tabs.addTab(scroller, title)
+
+    def _on_ambient_tab_changed(self, sync_all: bool = False) -> None:
+        if sync_all:
+            for i in range(self.ambient_tabs.count()):
+                scroller = self.ambient_tabs.widget(i)
+                inner = scroller.widget() if isinstance(scroller, QScrollArea) else None
+                if inner is not None and hasattr(inner, "sync_from_config"):
+                    inner.sync_from_config()
+        if self.controller.ambient.manager is not None:
+            self.controller.ambient.manager.rebuild()
+
+    def _on_ambient_enable_toggled(self, checked: bool) -> None:
+        self.controller.settings.setValue("ambient_light_enabled", checked)
+        self.controller.ambient.set_enabled(checked)
+        self._populate_ambient_tabs()
+        self.ambient_status.setText("Ambient Light is running." if checked else "Ambient Light is off.")
+
+    def _on_ambient_refresh(self) -> None:
+        self._populate_ambient_tabs()
+        if self.controller.ambient.manager is not None:
+            self.controller.ambient.manager.rebuild()
+        self.ambient_status.setText("Monitors refreshed.")
+
+    def _on_ambient_save(self) -> None:
+        ok = self.controller.ambient.save()
+        self.ambient_status.setText("Ambient settings saved." if ok else "Save failed -- see ambient.log.")
 
     def closeEvent(self, event):
         event.ignore()
