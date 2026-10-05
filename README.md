@@ -1,8 +1,12 @@
 
 <center>
 	DMod
-<img width="1400" height="547" alt="image" src="https://github.com/user-attachments/assets/5aabc6b6-0e11-4983-8cab-656869f00a05" />
+<img width="1400" height="547" alt="image" src="https://github.com/user-attachments/assets/c7e93097-c325-44b4-960d-9c8ff8dbafa2" />
+<img width="1400" height="547" alt="image" src="https://github.com/user-attachments/assets/2f5e033b-ffa6-44bc-9acb-f4939ff4ced0" />
+<img width="1400" height="547" alt="image" src="https://github.com/user-attachments/assets/dbe66cb3-7679-427c-b61d-235f17b28e41" />
 </center>
+
+
 
 NEW FEATURE:  Bluetooth device manager subprogram.  This launches a small separate utility that lets you remove stubborn bluetooth devices that Windows fails to remove on it's own, also makes a backup in case you remove something by accident.
 
