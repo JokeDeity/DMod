@@ -6,7 +6,7 @@
 <img width="1400" height="547" alt="image" src="https://github.com/user-attachments/assets/dbe66cb3-7679-427c-b61d-235f17b28e41" />
 </center>
 
-
+**NEW FEATURES:  Lots of new features are currently contained to the source files only and have not been compiled to a new update, you can download the source files and launch with the .vbs file for now while kinks are worked out.
 
 NEW FEATURE:  Bluetooth device manager subprogram.  This launches a small separate utility that lets you remove stubborn bluetooth devices that Windows fails to remove on it's own, also makes a backup in case you remove something by accident.
 
@@ -60,10 +60,7 @@ How to Use
           If you are using the V1.0 .exe from the archive in the releases section you just need to extract 
 		  everything to one location and then launch the .exe.
     
-          If you download the files from the repository you will have to run the python script 
-		  (dmod.py) from either CMD Prompt or Powershell:
-				CD into the folder
-				"python dmod.py"
+          If you download the files from the repository you will want to run the .vbs file or make a shortcut to it.
 
     Hotkeys: Set them as you would like in the settings window, there's one for setting the veil, one for pausing 
 	it,	one to toggle cursorlock, and one to toggle always on top.
